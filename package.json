@@ -1,0 +1,66 @@
+{
+  "name": "kemono-archive-gallery",
+  "version": "1.0.0",
+  "description": "Desktop gallery viewer for ZIP/RAR/7Z archives from Kemono",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --debug",
+    "build-win": "electron-builder --win",
+    "build-mac": "electron-builder --mac", 
+    "build-linux": "electron-builder --linux",
+    "build-all": "electron-builder --win --mac --linux",
+    "dist": "electron-builder"
+  },
+  "keywords": [
+    "kemono",
+    "archive",
+    "gallery",
+    "image",
+    "viewer"
+  ],
+  "author": "You",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.10",
+    "node-unrar-js": "^2.0.0",
+    "node-7z": "^3.0.0",
+    "uuid": "^9.0.1"
+  },
+  "build": {
+    "appId": "com.yourname.kemono-archive-gallery",
+    "productName": "Kemono Archive Gallery",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
