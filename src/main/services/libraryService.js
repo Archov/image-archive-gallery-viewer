@@ -20,14 +20,14 @@ async function removeDirectory(targetPath) {
   }
 }
 
-async function manageCache(maxSizeBytes) {
+async function manageLibrary(maxSizeBytes) {
   const database = getDatabase();
-  const cacheInfo = await getCacheUsage();
+  const libraryInfo = await getLibraryUsage();
 
-  console.log(`Cache management: current=${(cacheInfo.totalSize / (1024 * 1024 * 1024)).toFixed(2)}GB, limit=${(maxSizeBytes / (1024 * 1024 * 1024)).toFixed(2)}GB`);
+  console.log(`Library management: current=${(libraryInfo.totalSize / (1024 * 1024 * 1024)).toFixed(2)}GB, limit=${(maxSizeBytes / (1024 * 1024 * 1024)).toFixed(2)}GB`);
 
-  if (cacheInfo.totalSize <= maxSizeBytes) {
-    console.log('Cache within limits, no cleanup needed');
+  if (libraryInfo.totalSize <= maxSizeBytes) {
+    console.log('Library within limits, no cleanup needed');
     return;
   }
 
@@ -43,14 +43,14 @@ async function manageCache(maxSizeBytes) {
   const archivesToClean = candidates.slice(1);
 
   const currentSize = isNaN(currentArchive.size) ? 0 : (currentArchive.size || 0);
-  let cacheSizeExcludingCurrent = cacheInfo.totalSize - currentSize;
+  let librarySizeExcludingCurrent = libraryInfo.totalSize - currentSize;
 
-  if (cacheSizeExcludingCurrent <= maxSizeBytes) {
+  if (librarySizeExcludingCurrent <= maxSizeBytes) {
     return;
   }
 
   let freedSpace = 0;
-  const spaceNeeded = cacheSizeExcludingCurrent - maxSizeBytes;
+  const spaceNeeded = librarySizeExcludingCurrent - maxSizeBytes;
 
   for (const archive of archivesToClean) {
     if (freedSpace >= spaceNeeded) break;
@@ -80,11 +80,11 @@ async function manageCache(maxSizeBytes) {
   await saveDatabase();
 }
 
-async function clearCache() {
+async function clearLibrary() {
   const database = getDatabase();
   const archives = Object.values(database.archives).filter(archive => !archive.starred);
 
-  console.log(`Clearing cache: ${archives.length} non-starred archives`);
+  console.log(`Clearing library: ${archives.length} non-starred archives`);
 
   for (const archive of archives) {
     try {
@@ -94,7 +94,7 @@ async function clearCache() {
       }
       if (archive.cachePath) {
         await removeDirectory(archive.cachePath);
-        console.log(`Deleted cache directory: ${archive.cachePath}`);
+        console.log(`Deleted library directory: ${archive.cachePath}`);
       }
 
       delete database.archives[archive.id];
@@ -110,10 +110,10 @@ async function clearCache() {
   }
 
   await saveDatabase();
-  console.log('Cache cleared successfully');
+  console.log('Library cleared successfully');
 }
 
-async function getCacheUsage() {
+async function getLibraryUsage() {
   const database = getDatabase();
   const archives = Object.values(database.archives).filter(archive => !archive.starred);
 
@@ -125,7 +125,7 @@ async function getCacheUsage() {
 
   const starredCount = Object.values(database.archives).filter(archive => archive.starred).length;
 
-  console.log(`Cache size (non-starred only): ${totalSize} bytes (${(totalSize / (1024 * 1024 * 1024)).toFixed(2)} GB)`);
+  console.log(`Library size (non-starred only): ${totalSize} bytes (${(totalSize / (1024 * 1024 * 1024)).toFixed(2)} GB)`);
   console.log(`Starred items: ${starredCount}`);
 
   return {
@@ -135,7 +135,7 @@ async function getCacheUsage() {
 }
 
 module.exports = {
-  manageCache,
-  clearCache,
-  getCacheUsage
+  manageLibrary,
+  clearLibrary,
+  getLibraryUsage
 };

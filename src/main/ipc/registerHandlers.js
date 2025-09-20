@@ -18,9 +18,9 @@ const {
   reorderHistory
 } = require('../services/historyService');
 const {
-  clearCache,
-  getCacheUsage
-} = require('../services/cacheService');
+  clearLibrary,
+  getLibraryUsage
+} = require('../services/libraryService');
 const {
   listBackups,
   restoreBackup
@@ -82,11 +82,11 @@ function registerHandlers(ipcMain, { getMainWindow }) {
   });
 
   ipcMain.handle('clear-cache', async () => {
-    await clearCache();
+    await clearLibrary();
   });
 
   ipcMain.handle('get-cache-info', async () => {
-    return getCacheUsage();
+    return getLibraryUsage();
   });
 
   ipcMain.handle('list-backups', async () => {

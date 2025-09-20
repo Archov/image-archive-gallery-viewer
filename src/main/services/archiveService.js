@@ -13,7 +13,7 @@ const {
   sanitizeFilename
 } = require('./extractionService');
 const { downloadFile } = require('./downloadService');
-const { manageCache } = require('./cacheService');
+const { manageLibrary, clearLibrary, getLibraryUsage } = require('./libraryService');
 const { getDatabase, saveDatabase } = require('./databaseService');
 const { cacheDir } = require('../config');
 
@@ -236,12 +236,12 @@ async function loadArchiveFromUrl(url, cacheSizeLimitGB, { onProgress } = {}) {
 
     await saveDatabase();
 
-    const cacheSizeBytes = (cacheSizeLimitGB || 2) * 1024 * 1024 * 1024;
-    await manageCache(cacheSizeBytes);
+    const librarySizeBytes = (cacheSizeLimitGB || 2) * 1024 * 1024 * 1024;
+    await manageLibrary(librarySizeBytes);
 
     return { images: sessionImages, archiveId };
   } catch (error) {
-    await cleanupCacheDirectory(cachePath);
+    await cleanupLibraryDirectory(cachePath);
     throw error;
   }
 }
@@ -302,12 +302,12 @@ async function loadLocalArchive(filePath, cacheSizeGB) {
 
     await saveDatabase();
 
-    const cacheSizeBytes = (cacheSizeGB || database.settings.cacheSize || 2) * 1024 * 1024 * 1024;
-    await manageCache(cacheSizeBytes);
+    const cacheSizeBytes = (cacheSizeGB || database.settings.librarySize || 2) * 1024 * 1024 * 1024;
+    await manageLibrary(cacheSizeBytes);
 
     return sessionImages;
   } catch (error) {
-    await cleanupCacheDirectory(cachePath);
+    await cleanupLibraryDirectory(cachePath);
     throw error;
   }
 }
@@ -389,11 +389,11 @@ async function fileExists(targetPath) {
   }
 }
 
-async function cleanupCacheDirectory(targetPath) {
+async function cleanupLibraryDirectory(targetPath) {
   try {
     await fs.rm(targetPath, { recursive: true, force: true });
   } catch (cleanupError) {
-    console.warn('Failed to clean up cache directory:', cleanupError.message);
+    console.warn('Failed to clean up library directory:', cleanupError.message);
   }
 }
 

@@ -69,24 +69,24 @@
         </div>
         
         <div class="settings-group">
-            <h3>Cache Management</h3>
+            <h3>Library Management</h3>
             
             <div class="setting-item">
-                <label for="cacheSize">Cache Size Limit (GB)</label>
-                <input type="number" id="cacheSize" min="0.5" max="50" step="0.5" value="2">
+                <label for="librarySize">Library Size Limit (GB)</label>
+                <input type="number" id="librarySize" min="0.5" max="50" step="0.5" value="2">
             </div>
             
-            <div class="cache-info" id="cacheInfo">
-                <div><span>Used:</span><span id="cacheUsed">0 MB</span></div>
-                <div><span>Available:</span><span id="cacheAvailable">2.0 GB</span></div>
-                <div><span>Starred Items:</span><span id="starredCount">0</span> <small style="color: #888;">(excluded from cache)</small></div>
-                <div class="cache-bar">
-                    <div class="cache-bar-fill" id="cacheBarFill" style="width: 0%"></div>
+            <div class="library-info" id="libraryInfo">
+                <div><span>Used:</span><span id="libraryUsed">0 MB</span></div>
+                <div><span>Available:</span><span id="libraryAvailable">2.0 GB</span></div>
+                <div><span>Starred Items:</span><span id="starredCount">0</span> <small style="color: #888;">(excluded from library)</small></div>
+                <div class="library-bar">
+                    <div class="library-bar-fill" id="libraryBarFill" style="width: 0%"></div>
                 </div>
             </div>
             
             <div class="setting-item" style="margin-top: 15px;">
-                <button class="load-btn" id="clearCacheBtn" style="width: 100%;">Clear Non-Starred Cache</button>
+                <button class="load-btn" id="clearLibraryBtn" style="width: 100%;">Clear Non-Starred Library</button>
             </div>
         </div>
 

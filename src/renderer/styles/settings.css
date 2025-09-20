@@ -63,25 +63,25 @@
   border-color: #4caf50;
 }
 
-.cache-info {
+.library-info {
   background: #333;
   padding: 12px;
   border-radius: 4px;
   margin-top: 10px;
 }
 
-.cache-info div {
+.library-info div {
   display: flex;
   justify-content: space-between;
   margin-bottom: 8px;
   font-size: 13px;
 }
 
-.cache-info div:last-child {
+.library-info div:last-child {
   margin-bottom: 0;
 }
 
-.cache-bar {
+.library-bar {
   height: 8px;
   background: #555;
   border-radius: 4px;
@@ -89,7 +89,7 @@
   margin-top: 8px;
 }
 
-.cache-bar-fill {
+.library-bar-fill {
   height: 100%;
   background: linear-gradient(90deg, #4caf50, #ffc107, #ff5722);
   transition: width 0.3s ease;

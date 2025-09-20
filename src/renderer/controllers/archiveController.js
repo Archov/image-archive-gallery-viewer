@@ -35,7 +35,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
         ui.updateStatus('Downloading...');
       }
 
-      const result = await electron.loadArchive(url, state.settings.cacheSize);
+      const result = await electron.loadArchive(url, state.settings.librarySize);
 
       if (!result?.images?.length) {
         throw new Error('No images found in archive');
@@ -61,7 +61,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
         await historyController.refreshHistory({ highlightUrl: url });
       }
 
-      await updateCacheInfo();
+      await updateLibraryInfo();
       ui.updateStatus(`Loaded ${result.images.length} images`);
 
       return result;
@@ -108,7 +108,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
         await historyController.refreshHistory({ highlightUrl: `file://${filePath}` });
       }
 
-      await updateCacheInfo();
+      await updateLibraryInfo();
       ui.updateStatus(`Loaded ${images.length} images from local file`);
 
       return images;
@@ -134,27 +134,27 @@ export function createArchiveController({ state, elements, ui, electron, gallery
     }
   }
 
-  async function updateCacheInfo() {
+  async function updateLibraryInfo() {
     try {
-      const cacheInfo = await electron.getCacheInfo();
-      const used = cacheInfo.totalSize;
-      const limit = state.settings.cacheSize * 1024 * 1024 * 1024;
+      const libraryInfo = await electron.getCacheInfo();
+      const used = libraryInfo.totalSize;
+      const limit = state.settings.librarySize * 1024 * 1024 * 1024;
       const usedPercentage = limit > 0 ? (used / limit) * 100 : 0;
 
-      if (elements.cacheUsed) {
-        elements.cacheUsed.textContent = formatBytes(used);
+      if (elements.libraryUsed) {
+        elements.libraryUsed.textContent = formatBytes(used);
       }
-      if (elements.cacheAvailable) {
-        elements.cacheAvailable.textContent = formatBytes(limit);
+      if (elements.libraryAvailable) {
+        elements.libraryAvailable.textContent = formatBytes(limit);
       }
       if (elements.starredCount) {
-        elements.starredCount.textContent = cacheInfo.starredCount;
+        elements.starredCount.textContent = libraryInfo.starredCount;
       }
-      if (elements.cacheBarFill) {
-        elements.cacheBarFill.style.width = `${Math.min(usedPercentage, 100)}%`;
+      if (elements.libraryBarFill) {
+        elements.libraryBarFill.style.width = `${Math.min(usedPercentage, 100)}%`;
       }
     } catch (error) {
-      console.error('Failed to update cache info:', error);
+      console.error('Failed to update library info:', error);
     }
   }
 
@@ -269,7 +269,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       if (adjacentItem.url.startsWith('file://')) {
         newImages = await electron.loadLocalArchive(adjacentItem.url.replace('file://', ''));
       } else {
-        const result = await electron.loadArchive(adjacentItem.url, state.settings.cacheSize);
+        const result = await electron.loadArchive(adjacentItem.url, state.settings.librarySize);
         newImages = result.images || [];
       }
 
@@ -329,7 +329,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       if (item.url.startsWith('file://')) {
         images = await electron.loadLocalArchive(item.url.replace('file://', ''));
       } else {
-        const result = await electron.loadArchive(item.url, state.settings.cacheSize);
+        const result = await electron.loadArchive(item.url, state.settings.librarySize);
         images = result.images || [];
       }
 
@@ -427,9 +427,9 @@ export function createArchiveController({ state, elements, ui, electron, gallery
           await historyController.refreshHistory({ selectId: historyItem.id });
         }
 
-        ui.updateStatus(`Loaded ${images.length} images from cache`);
+        ui.updateStatus(`Loaded ${images.length} images from library`);
       } catch (error) {
-        ui.updateStatus(`Error loading from cache: ${error.message}`, true);
+        ui.updateStatus(`Error loading from library: ${error.message}`, true);
       }
     } else {
       elements.urlInput.value = historyItem.url;
@@ -450,7 +450,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
     unloadArchiveFromCollection,
     loadFromHistory,
     loadAdjacentArchive,
-    updateCacheInfo,
+    updateLibraryInfo,
     registerHistoryItems
   };
 }
