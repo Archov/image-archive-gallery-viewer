@@ -1,7 +1,9 @@
 const { createHash } = require('crypto');
+const { dialog } = require('electron');
 const {
   loadArchiveFromUrl,
   loadLocalArchive,
+  loadLocalArchiveFromData,
   extractImage,
   toggleImageStar
 } = require('../services/archiveService');
@@ -18,16 +20,16 @@ const {
   reorderHistory
 } = require('../services/historyService');
 const {
-  clearCache,
-  getCacheUsage
-} = require('../services/cacheService');
+  clearLibrary,
+  getLibraryUsage
+} = require('../services/libraryService');
 const {
   listBackups,
   restoreBackup
 } = require('../services/databaseService');
 
 function registerHandlers(ipcMain, { getMainWindow }) {
-  ipcMain.handle('load-archive', async (event, url, cacheSizeLimitGB) => {
+  ipcMain.handle('load-archive', async (event, url, librarySizeLimitGB) => {
     const mainWindow = getMainWindow();
     const archiveId = createHash('md5').update(url).digest('hex');
 
@@ -42,11 +44,39 @@ function registerHandlers(ipcMain, { getMainWindow }) {
         }
       : null;
 
-    return loadArchiveFromUrl(url, cacheSizeLimitGB, { onProgress });
+    return loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress });
   });
 
-  ipcMain.handle('load-local-archive', async (event, filePath) => {
-    return loadLocalArchive(filePath);
+  // Show move/copy dialog for local files
+  ipcMain.handle('show-local-archive-dialog', async (event, filePath) => {
+    const mainWindow = getMainWindow();
+    
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      title: 'Add Archive to Library',
+      message: `How would you like to add this archive to your library?`,
+      detail: `File: ${filePath}\\n\\nMove: Moves the original file to your library (recommended)\\nCopy: Keeps the original file and creates a copy in your library`,
+      buttons: ['Move to Library', 'Copy to Library', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2
+    });
+
+    if (result.response === 2) {
+      return { cancelled: true };
+    }
+
+    return {
+      cancelled: false,
+      moveToLibrary: result.response === 0
+    };
+  });
+
+  ipcMain.handle('load-local-archive', async (event, filePath, librarySizeGB, options = {}) => {
+    return loadLocalArchive(filePath, librarySizeGB, options);
+  });
+
+  ipcMain.handle('load-local-archive-from-data', async (event, fileData, librarySizeGB) => {
+    return loadLocalArchiveFromData(fileData, librarySizeGB);
   });
 
   ipcMain.handle('load-settings', async () => {
@@ -81,12 +111,13 @@ function registerHandlers(ipcMain, { getMainWindow }) {
     return extractImage(archiveId, imageId);
   });
 
-  ipcMain.handle('clear-cache', async () => {
-    await clearCache();
+  // Updated to use library terminology
+  ipcMain.handle('clear-library', async () => {
+    await clearLibrary();
   });
 
-  ipcMain.handle('get-cache-info', async () => {
-    return getCacheUsage();
+  ipcMain.handle('get-library-info', async () => {
+    return getLibraryUsage();
   });
 
   ipcMain.handle('list-backups', async () => {

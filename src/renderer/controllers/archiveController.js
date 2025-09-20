@@ -35,7 +35,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
         ui.updateStatus('Downloading...');
       }
 
-      const result = await electron.loadArchive(url, state.settings.cacheSize);
+      const result = await electron.loadArchive(url, state.settings.librarySize);
 
       if (!result?.images?.length) {
         throw new Error('No images found in archive');
@@ -61,7 +61,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
         await historyController.refreshHistory({ highlightUrl: url });
       }
 
-      await updateCacheInfo();
+      await updateLibraryInfo();
       ui.updateStatus(`Loaded ${result.images.length} images`);
 
       return result;
@@ -77,14 +77,45 @@ export function createArchiveController({ state, elements, ui, electron, gallery
     }
   }
 
-  async function openLocalArchive(filePath, displayName) {
+  async function openLocalArchive(file, displayName) {
     if (state.isArchiveLoading) return;
 
     state.isArchiveLoading = true;
 
     try {
-      ui.showLoading('Extracting Archive', 'Loading local archive...');
-      const images = await electron.loadLocalArchive(filePath);
+      ui.showLoading('Processing Archive', 'Reading file data...');
+      
+      // Check if we need to prompt for move/copy
+      const dialogResult = await electron.showLocalArchiveDialog(file.name);
+      
+      if (dialogResult.cancelled) {
+        ui.updateStatus('Archive loading cancelled');
+        return;
+      }
+      
+      // Read the file data as an ArrayBuffer
+      const fileData = await readFileAsArrayBuffer(file);
+      
+      ui.updateText('Extracting Archive', 'Processing archive data...');
+      
+      const result = await electron.loadLocalArchiveFromData({
+        name: file.name,
+        data: Array.from(new Uint8Array(fileData)), // Convert to array for IPC
+        size: file.size,
+        copyToLibrary: !dialogResult.moveToLibrary
+      }, state.settings.librarySize);
+      
+      let images;
+      if (result.needsUserChoice) {
+        // This shouldn't happen since we already showed the dialog
+        throw new Error('Unexpected user choice needed');
+      } else if (result.alreadyInLibrary) {
+        images = result.images;
+        ui.updateStatus('Archive was already in library', false);
+      } else {
+        images = result.images;
+        ui.updateStatus(result.wasCopied ? 'Archive copied to library' : 'Archive moved to library', false);
+      }
 
       if (!images?.length) {
         throw new Error('No images found in local archive');
@@ -92,7 +123,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
 
       gallery.displayGallery(images, displayName);
 
-      const archiveId = getArchiveIdFromUrl(`file://${filePath}`);
+      const archiveId = getArchiveIdFromUrl(`file://${file.name}`);
       images.forEach(img => {
         img.archiveName = displayName;
         img.originalArchiveId = archiveId;
@@ -102,13 +133,13 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       state.loadedArchiveIds.add(archiveId);
       state.currentArchiveId = archiveId;
 
-      await addToHistory(displayName, `file://${filePath}`, images.length);
+      await addToHistory(displayName, `file://${file.name}`, images.length);
 
       if (historyController) {
-        await historyController.refreshHistory({ highlightUrl: `file://${filePath}` });
+        await historyController.refreshHistory({ highlightUrl: `file://${file.name}` });
       }
 
-      await updateCacheInfo();
+      await updateLibraryInfo();
       ui.updateStatus(`Loaded ${images.length} images from local file`);
 
       return images;
@@ -119,6 +150,15 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       ui.hideLoading();
       state.isArchiveLoading = false;
     }
+  }
+  
+  function readFileAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsArrayBuffer(file);
+    });
   }
 
   async function addToHistory(name, url, imageCount) {
@@ -134,27 +174,27 @@ export function createArchiveController({ state, elements, ui, electron, gallery
     }
   }
 
-  async function updateCacheInfo() {
+  async function updateLibraryInfo() {
     try {
-      const cacheInfo = await electron.getCacheInfo();
-      const used = cacheInfo.totalSize;
-      const limit = state.settings.cacheSize * 1024 * 1024 * 1024;
+      const libraryInfo = await electron.getLibraryInfo();
+      const used = libraryInfo.totalArchiveSize;
+      const limit = state.settings.librarySize * 1024 * 1024 * 1024;
       const usedPercentage = limit > 0 ? (used / limit) * 100 : 0;
 
-      if (elements.cacheUsed) {
-        elements.cacheUsed.textContent = formatBytes(used);
+      if (elements.libraryUsed) {
+        elements.libraryUsed.textContent = formatBytes(used);
       }
-      if (elements.cacheAvailable) {
-        elements.cacheAvailable.textContent = formatBytes(limit);
+      if (elements.libraryAvailable) {
+        elements.libraryAvailable.textContent = formatBytes(limit);
       }
       if (elements.starredCount) {
-        elements.starredCount.textContent = cacheInfo.starredCount;
+        elements.starredCount.textContent = libraryInfo.starredCount;
       }
-      if (elements.cacheBarFill) {
-        elements.cacheBarFill.style.width = `${Math.min(usedPercentage, 100)}%`;
+      if (elements.libraryBarFill) {
+        elements.libraryBarFill.style.width = `${Math.min(usedPercentage, 100)}%`;
       }
     } catch (error) {
-      console.error('Failed to update cache info:', error);
+      console.error('Failed to update library info:', error);
     }
   }
 
@@ -269,7 +309,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       if (adjacentItem.url.startsWith('file://')) {
         newImages = await electron.loadLocalArchive(adjacentItem.url.replace('file://', ''));
       } else {
-        const result = await electron.loadArchive(adjacentItem.url, state.settings.cacheSize);
+        const result = await electron.loadArchive(adjacentItem.url, state.settings.librarySize);
         newImages = result.images || [];
       }
 
@@ -329,7 +369,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       if (item.url.startsWith('file://')) {
         images = await electron.loadLocalArchive(item.url.replace('file://', ''));
       } else {
-        const result = await electron.loadArchive(item.url, state.settings.cacheSize);
+        const result = await electron.loadArchive(item.url, state.settings.librarySize);
         images = result.images || [];
       }
 
@@ -450,7 +490,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
     unloadArchiveFromCollection,
     loadFromHistory,
     loadAdjacentArchive,
-    updateCacheInfo,
+    updateLibraryInfo,
     registerHistoryItems
   };
 }

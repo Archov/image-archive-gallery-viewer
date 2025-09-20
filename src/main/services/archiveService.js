@@ -13,17 +13,16 @@ const {
   sanitizeFilename
 } = require('./extractionService');
 const { downloadFile } = require('./downloadService');
-const { manageCache } = require('./cacheService');
+const { manageLibrary } = require('./libraryService');
 const { getDatabase, saveDatabase } = require('./databaseService');
-const { cacheDir } = require('../config');
+const { libraryDir } = require('../config');
 
 function normalizeFileUrl(filePath) {
   return `file://${filePath.replace(/\\/g, '/')}`;
 }
 
-
 async function createSessionExtractDir(archiveId) {
-  const baseDir = path.join(os.tmpdir(), 'archive-gallery', archiveId);
+  const baseDir = path.join(os.tmpdir(), 'kemono-gallery', archiveId);
   await fs.rm(baseDir, { recursive: true, force: true });
   await fs.mkdir(baseDir, { recursive: true });
   return baseDir;
@@ -78,120 +77,102 @@ function getArchiveExtension(url) {
   }
 }
 
-
-async function loadArchiveFromUrl(url, cacheSizeLimitGB, { onProgress } = {}) {
+async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) {
   const archiveId = createHash('md5').update(url).digest('hex');
-  const cachePath = path.join(cacheDir, archiveId);
   const database = getDatabase();
 
   try {
+    // Check if archive already exists in library
     if (database.archives[archiveId]) {
       const archive = database.archives[archiveId];
       archive.lastAccessed = new Date().toISOString();
-      await saveDatabase();
-
-      let databaseDirty = false;
-
-      let archivePath = archive.archivePath;
-      if (!archivePath || !(await fileExists(archivePath))) {
-        if (archive.url && /^https?:/i.test(archive.url)) {
-          const archiveExtFromUrl = getArchiveExtension(archive.url);
-          archivePath = path.join(cacheDir, archiveId, "archive" + archiveExtFromUrl);
-          await fs.mkdir(path.dirname(archivePath), { recursive: true });
-          await downloadFile(archive.url, archivePath);
-          archive.archivePath = archivePath;
-          databaseDirty = true;
-        } else {
-          throw new Error("Archive file not available for cached load");
-        }
-      }
-      const archiveExt = path.extname(archivePath).toLowerCase() || getArchiveExtension(archive.url || url);
-
-      const sessionDir = await createSessionExtractDir(archiveId);
-      const storedImages = Object.values(database.images).filter(img => img.archiveId === archiveId);
-      const extractedImages = await extractArchive(archiveExt, archivePath, sessionDir);
-
-      const lookup = buildExtractedLookup(extractedImages);
-      const archiveImagesById = new Map();
-      if (!Array.isArray(archive.extractedImages)) {
-        archive.extractedImages = [];
-      }
-      for (const meta of archive.extractedImages) {
-        archiveImagesById.set(meta.id, meta);
-      }
-
-      const sessionImages = [];
-      const unmatchedImages = [];
-
-      for (const imageMeta of storedImages) {
-        const match = findExtractedMatch(imageMeta, lookup);
-        if (match) {
-          const imageUrl = match.url || normalizeFileUrl(match.path);
-          sessionImages.push({
-            id: imageMeta.id,
-            name: imageMeta.name,
-            url: imageUrl,
-            starred: Boolean(imageMeta.starred),
-            archiveName: archive.displayName || archive.url || "Archive"
-          });
-
-          const imageRecord = database.images[imageMeta.id];
-          if (imageRecord) {
-            const normalizedRelative = (match.relativePath || match.originalName || imageRecord.relativePath || imageRecord.originalName || "").replace(/\\/g, "/");
-            imageRecord.relativePath = normalizedRelative;
-            databaseDirty = true;
-          }
-
-          const archiveMeta = archiveImagesById.get(imageMeta.id);
-          if (archiveMeta) {
-            const archiveRelative = (match.relativePath || match.originalName || '').replace(/\\/g, '/');
-            if (archiveRelative && archiveMeta.relativePath !== archiveRelative) {
-              archiveMeta.relativePath = archiveRelative;
-              databaseDirty = true;
-            }
-          }
-        } else {
-          unmatchedImages.push(imageMeta);
-        }
-      }
-
-      if (unmatchedImages.length > 0) {
-        for (const imageMeta of unmatchedImages) {
-          const { filePath, entryName } = buildSessionOutputPath(sessionDir, imageMeta);
-          try {
-            await extractEntryToFile(archivePath, archiveExt, entryName, filePath);
-            sessionImages.push({
-              id: imageMeta.id,
-              name: imageMeta.name,
-              url: normalizeFileUrl(filePath),
-              starred: Boolean(imageMeta.starred),
-              archiveName: archive.displayName || archive.url || "Archive"
-            });
-          } catch (error) {
-            console.error("Failed to restore image " + imageMeta.name + ":", error);
-          }
-        }
-      }
-
-      if (databaseDirty) {
+      
+      // Check if we have the archive in the new library structure
+      const libraryArchivePath = archive.libraryPath ? path.join(archive.libraryPath, archive.archiveFileName || 'archive' + getArchiveExtension(url)) : null;
+      
+      if (libraryArchivePath && (await fileExists(libraryArchivePath))) {
+        // Archive exists in library - use it
         await saveDatabase();
-      }
+        
+        const sessionDir = await createSessionExtractDir(archiveId);
+        const archiveExt = path.extname(libraryArchivePath).toLowerCase();
+        const extractedImages = await extractArchive(archiveExt, libraryArchivePath, sessionDir);
 
-      return { images: sessionImages, archiveId };
+        const sessionImages = extractedImages.map(img => ({
+          id: img.id,
+          name: img.name,
+          url: img.url,
+          starred: Boolean(img.starred),
+          archiveName: archive.displayName || path.basename(url)
+        }));
+
+        return { images: sessionImages, archiveId };
+      } else if (archive.sourceUrl || archive.url) {
+        // Archive missing from library but we have URL - re-download for migration
+        const sourceUrl = archive.sourceUrl || archive.url;
+        console.log(`Archive missing from library, re-downloading from: ${sourceUrl}`);
+        
+        // Set up new library structure
+        const archiveExt = getArchiveExtension(sourceUrl);
+        const libraryPath = path.join(libraryDir, archiveId);
+        await fs.mkdir(libraryPath, { recursive: true });
+        
+        const archiveFileName = `archive${archiveExt}`;
+        const newLibraryArchivePath = path.join(libraryPath, archiveFileName);
+
+        // Re-download archive to library
+        await downloadFile(sourceUrl, newLibraryArchivePath, onProgress);
+        
+        // Update database with new library structure
+        const archiveStat = await fs.stat(newLibraryArchivePath);
+        archive.libraryPath = libraryPath;
+        archive.archiveFileName = archiveFileName;
+        archive.archiveSize = archiveStat.size;
+        archive.sourceUrl = sourceUrl; // Ensure sourceUrl is preserved
+        
+        // Remove old cache references if they exist
+        delete archive.cachePath;
+        delete archive.archivePath;
+        
+        await saveDatabase();
+        
+        // Extract to temp for viewing
+        const sessionDir = await createSessionExtractDir(archiveId);
+        const extractedImages = await extractArchive(archiveExt, newLibraryArchivePath, sessionDir);
+
+        const sessionImages = extractedImages.map(img => ({
+          id: img.id,
+          name: img.name,
+          url: img.url,
+          starred: Boolean(img.starred),
+          archiveName: archive.displayName || path.basename(sourceUrl)
+        }));
+
+        console.log(`Migration complete: ${sourceUrl} re-downloaded to library`);
+        return { images: sessionImages, archiveId };
+      } else {
+        // No way to recover this archive
+        throw new Error(`Archive missing from library and no source URL available: ${archive.displayName || archiveId}`);
+      }
     }
 
-    await fs.mkdir(cachePath, { recursive: true });
-
+    // New archive - download to library
     const archiveExt = getArchiveExtension(url);
-    const archivePath = path.join(cachePath, `archive${archiveExt}`);
+    const libraryPath = path.join(libraryDir, archiveId);
+    await fs.mkdir(libraryPath, { recursive: true });
+    
+    const archiveFileName = `archive${archiveExt}`;
+    const libraryArchivePath = path.join(libraryPath, archiveFileName);
 
-    await downloadFile(url, archivePath, onProgress);
+    // Download archive to library
+    await downloadFile(url, libraryArchivePath, onProgress);
 
-    const archiveStat = await fs.stat(archivePath);
-    console.log(`Remote archive loaded: ${archivePath}, size=${archiveStat.size} bytes (${(archiveStat.size / (1024 * 1024)).toFixed(2)} MB)`);
+    const archiveStat = await fs.stat(libraryArchivePath);
+    console.log(`Archive added to library: ${libraryArchivePath}, size=${archiveStat.size} bytes (${(archiveStat.size / (1024 * 1024)).toFixed(2)} MB)`);
 
+    // Extract to temp directory for viewing
     const sessionDir = await createSessionExtractDir(archiveId);
-    const extractedImages = await extractArchive(archiveExt, archivePath, sessionDir);
+    const extractedImages = await extractArchive(archiveExt, libraryArchivePath, sessionDir);
 
     const metadata = extractedImages.map(img => ({
       id: img.id,
@@ -210,13 +191,15 @@ async function loadArchiveFromUrl(url, cacheSizeLimitGB, { onProgress } = {}) {
       archiveName: path.basename(url)
     }));
 
+    // Add to library database
     database.archives[archiveId] = {
       id: archiveId,
-      url,
-      cachePath,
-      archivePath,
-      size: archiveStat.size,
+      sourceUrl: url, // Store original URL for future reference
+      libraryPath: libraryPath,
+      archiveFileName: archiveFileName,
+      archiveSize: archiveStat.size, // Only archive size counts toward library limit
       lastAccessed: new Date().toISOString(),
+      dateAdded: new Date().toISOString(),
       starred: false,
       displayName: path.basename(url),
       extractedImages: metadata
@@ -236,28 +219,96 @@ async function loadArchiveFromUrl(url, cacheSizeLimitGB, { onProgress } = {}) {
 
     await saveDatabase();
 
-    const cacheSizeBytes = (cacheSizeLimitGB || 2) * 1024 * 1024 * 1024;
-    await manageCache(cacheSizeBytes);
+    // Manage library size (only considering archive sizes)
+    const librarySizeBytes = (librarySizeLimitGB || 2) * 1024 * 1024 * 1024;
+    await manageLibrary(librarySizeBytes);
 
     return { images: sessionImages, archiveId };
   } catch (error) {
-    await cleanupCacheDirectory(cachePath);
+    // Cleanup on error
+    const libraryPath = path.join(libraryDir, archiveId);
+    await cleanupLibraryDirectory(libraryPath);
     throw error;
   }
 }
 
-
-async function loadLocalArchive(filePath, cacheSizeGB) {
+async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
+  const { copyToLibrary = null } = options; // null = ask user, true = copy, false = move
   const archiveId = createHash('md5').update(filePath).digest('hex');
-  const cachePath = path.join(cacheDir, archiveId);
   const database = getDatabase();
 
   try {
-    const archiveStat = await fs.stat(filePath);
-    const sessionDir = await createSessionExtractDir(archiveId);
-    const ext = path.extname(filePath).toLowerCase();
+    // Check if already in library
+    if (database.archives[archiveId]) {
+      const archive = database.archives[archiveId];
+      archive.lastAccessed = new Date().toISOString();
+      
+      // Check if archive exists in new library structure
+      const libraryArchivePath = archive.libraryPath ? path.join(archive.libraryPath, archive.archiveFileName || `archive${path.extname(filePath)}`) : null;
+      
+      if (libraryArchivePath && (await fileExists(libraryArchivePath))) {
+        // Archive exists in library - use it
+        await saveDatabase();
 
-    const extractedImages = await extractArchive(ext, filePath, sessionDir);
+        const sessionDir = await createSessionExtractDir(archiveId);
+        const archiveExt = path.extname(libraryArchivePath).toLowerCase();
+        const extractedImages = await extractArchive(archiveExt, libraryArchivePath, sessionDir);
+
+        const sessionImages = extractedImages.map(img => ({
+          id: img.id,
+          name: img.name,
+          url: img.url,
+          starred: Boolean(img.starred),
+          archiveName: archive.displayName || path.basename(filePath)
+        }));
+
+        return { 
+          images: sessionImages, 
+          archiveId,
+          alreadyInLibrary: true
+        };
+      } else {
+        // Archive missing from library but we have the original file path
+        // Treat this as a new local archive that needs to be added
+        console.log(`Archive missing from library, will re-add from: ${filePath}`);
+        // Continue with normal local archive processing below
+      }
+    }
+
+    const archiveStat = await fs.stat(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    
+    // New local archive - need to add to library
+    const libraryPath = path.join(libraryDir, archiveId);
+    await fs.mkdir(libraryPath, { recursive: true });
+    
+    const archiveFileName = `archive${ext}`;
+    const libraryArchivePath = path.join(libraryPath, archiveFileName);
+
+    // Determine if we should copy or move (this will be handled by UI)
+    let shouldCopy = copyToLibrary;
+    if (shouldCopy === null) {
+      // Return special response to trigger UI prompt
+      return {
+        needsUserChoice: true,
+        archiveId,
+        filePath,
+        librarySizeGB
+      };
+    }
+
+    // Copy or move file to library
+    if (shouldCopy) {
+      await fs.copyFile(filePath, libraryArchivePath);
+      console.log(`Archive copied to library: ${libraryArchivePath}`);
+    } else {
+      await fs.rename(filePath, libraryArchivePath);
+      console.log(`Archive moved to library: ${libraryArchivePath}`);
+    }
+
+    // Extract to temp for viewing
+    const sessionDir = await createSessionExtractDir(archiveId);
+    const extractedImages = await extractArchive(ext, libraryArchivePath, sessionDir);
 
     const metadata = extractedImages.map(img => ({
       id: img.id,
@@ -276,16 +327,19 @@ async function loadLocalArchive(filePath, cacheSizeGB) {
       archiveName: path.basename(filePath)
     }));
 
+    // Add to library database
     database.archives[archiveId] = {
       id: archiveId,
-      url: `file://${filePath}`,
-      cachePath,
-      archivePath: filePath,
-      size: archiveStat.size,
+      sourceUrl: `file://${filePath}`, // Store original file path
+      libraryPath: libraryPath,
+      archiveFileName: archiveFileName,
+      archiveSize: archiveStat.size, // Only archive size counts toward library limit
       lastAccessed: new Date().toISOString(),
+      dateAdded: new Date().toISOString(),
       starred: false,
       displayName: path.basename(filePath),
-      extractedImages: metadata
+      extractedImages: metadata,
+      wasMovedToLibrary: !shouldCopy // Track if original was moved
     };
 
     metadata.forEach(meta => {
@@ -302,16 +356,22 @@ async function loadLocalArchive(filePath, cacheSizeGB) {
 
     await saveDatabase();
 
-    const cacheSizeBytes = (cacheSizeGB || database.settings.cacheSize || 2) * 1024 * 1024 * 1024;
-    await manageCache(cacheSizeBytes);
+    // Manage library size
+    const librarySizeBytes = (librarySizeGB || database.settings.librarySize || 2) * 1024 * 1024 * 1024;
+    await manageLibrary(librarySizeBytes);
 
-    return sessionImages;
+    return { 
+      images: sessionImages, 
+      archiveId,
+      addedToLibrary: true,
+      wasCopied: shouldCopy
+    };
   } catch (error) {
-    await cleanupCacheDirectory(cachePath);
+    const libraryPath = path.join(libraryDir, archiveId);
+    await cleanupLibraryDirectory(libraryPath);
     throw error;
   }
 }
-
 
 async function extractImage(archiveId, imageId) {
   const database = getDatabase();
@@ -322,28 +382,19 @@ async function extractImage(archiveId, imageId) {
     throw new Error('Archive or image not found');
   }
 
-  let archivePath = archive.archivePath;
-  if (!archivePath || !(await fileExists(archivePath))) {
-    if (archive.url && /^https?:/i.test(archive.url)) {
-      const archiveExt = getArchiveExtension(archive.url);
-      archivePath = path.join(cacheDir, archiveId, `archive${archiveExt}`);
-      await fs.mkdir(path.dirname(archivePath), { recursive: true });
-      await downloadFile(archive.url, archivePath);
-      archive.archivePath = archivePath;
-      await saveDatabase();
-    } else {
-      throw new Error('Archive file not available for extraction');
-    }
+  const libraryArchivePath = path.join(archive.libraryPath, archive.archiveFileName);
+  if (!(await fileExists(libraryArchivePath))) {
+    throw new Error('Archive file not found in library');
   }
 
-  const archiveExt = path.extname(archivePath).toLowerCase() || getArchiveExtension(archive.url || '');
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-image-'));
+  const archiveExt = path.extname(libraryArchivePath).toLowerCase();
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kemono-image-'));
   const entryName = (image.originalName || image.name || String(image.id)).replace(/\\/g, '/');
   const ext = path.extname(entryName) || '.img';
   const safeName = sanitizeFilename(path.basename(entryName, ext)) || image.id;
   const outputPath = path.join(tempDir, `${safeName}-${image.id}${ext}`);
 
-  await extractEntryToFile(archivePath, archiveExt, entryName, outputPath);
+  await extractEntryToFile(libraryArchivePath, archiveExt, entryName, outputPath);
 
   return normalizeFileUrl(outputPath);
 }
@@ -359,6 +410,7 @@ async function toggleImageStar(archiveId, imageId) {
 
   image.starred = !image.starred;
 
+  // If any image is starred, star the archive too
   const archiveImages = Object.values(database.images).filter(img => img.archiveId === archiveId);
   archive.starred = archiveImages.some(img => img.starred);
 
@@ -389,100 +441,12 @@ async function fileExists(targetPath) {
   }
 }
 
-async function cleanupCacheDirectory(targetPath) {
+async function cleanupLibraryDirectory(targetPath) {
   try {
     await fs.rm(targetPath, { recursive: true, force: true });
   } catch (cleanupError) {
-    console.warn('Failed to clean up cache directory:', cleanupError.message);
+    console.warn('Failed to clean up library directory:', cleanupError.message);
   }
-}
-
-function normalizeLookupKey(value) {
-  if (!value) {
-    return null;
-  }
-
-  return value
-    .replace(/\\/g, '/')
-    .replace(/^\.\//, '')
-    .replace(/^\/+/, '')
-    .trim()
-    .toLowerCase();
-}
-
-function addToLookupBucket(map, key, image) {
-  if (!key) {
-    return;
-  }
-  if (!map.has(key)) {
-    map.set(key, []);
-  }
-  map.get(key).push(image);
-}
-
-function takeFromLookupBucket(map, key) {
-  if (!key) {
-    return null;
-  }
-  const bucket = map.get(key);
-  if (!bucket || bucket.length === 0) {
-    return null;
-  }
-  const value = bucket.shift();
-  if (bucket.length === 0) {
-    map.delete(key);
-  }
-  return value;
-}
-
-function buildExtractedLookup(images) {
-  const byOriginal = new Map();
-  const byRelative = new Map();
-  const byFilename = new Map();
-
-  for (const image of images) {
-    const originalKey = normalizeLookupKey(image.originalName);
-    addToLookupBucket(byOriginal, originalKey, image);
-
-    const relativeKey = normalizeLookupKey(image.relativePath);
-    if (relativeKey && relativeKey !== originalKey) {
-      addToLookupBucket(byRelative, relativeKey, image);
-    }
-
-    const filename = path.basename(image.relativePath || image.originalName || image.name || '');
-    const filenameKey = normalizeLookupKey(filename);
-    addToLookupBucket(byFilename, filenameKey, image);
-  }
-
-  return { byOriginal, byRelative, byFilename };
-}
-
-function findExtractedMatch(imageMeta, lookup) {
-  const originalKey = normalizeLookupKey(imageMeta.originalName);
-  let match = takeFromLookupBucket(lookup.byOriginal, originalKey);
-
-  if (!match) {
-    const relativeKey = normalizeLookupKey(imageMeta.relativePath);
-    match = takeFromLookupBucket(lookup.byRelative, relativeKey);
-  }
-
-  if (!match) {
-    const name = path.basename(imageMeta.relativePath || imageMeta.originalName || imageMeta.name || '');
-    const fileKey = normalizeLookupKey(name);
-    match = takeFromLookupBucket(lookup.byFilename, fileKey);
-  }
-
-  return match || null;
-}
-
-function mapImageForResponse(img) {
-  return {
-    id: img.id,
-    name: img.name,
-    url: img.url,
-    starred: Boolean(img.starred),
-    archiveName: img.archiveName
-  };
 }
 
 module.exports = {

@@ -142,7 +142,7 @@ async function loadSettings() {
 
     state.settings = { ...state.settings, ...settings };
 
-    elements.cacheSizeSelect.value = state.settings.cacheSize;
+    elements.librarySizeSelect.value = state.settings.librarySize;
 
     elements.autoLoadFromClipboardSelect.value = String(state.settings.autoLoadFromClipboard);
 
@@ -166,7 +166,7 @@ async function loadSettings() {
 
 async function saveSettings() {
 
-  state.settings.cacheSize = parseFloat(elements.cacheSizeSelect.value);
+  state.settings.librarySize = parseFloat(elements.librarySizeSelect.value);
 
   state.settings.autoLoadFromClipboard = elements.autoLoadFromClipboardSelect.value === 'true';
 
@@ -655,7 +655,7 @@ async function toggleHistoryStar(historyId) {
 
     await historyController.refreshHistory();
 
-    await archive.updateCacheInfo();
+    await archive.updateLibraryInfo();
 
   } catch (error) {
 
@@ -751,17 +751,17 @@ async function selectNoneHistory() {
 
 }
 
-async function clearCache() {
+async function clearLibrary() {
 
-  if (!confirm('Clear non-starred cache? Starred items will be preserved.')) return;
+  if (!confirm('Clear non-starred library? Starred items will be preserved.')) return;
 
   try {
 
-    await electron.clearCache();
+    await electron.clearLibrary();
 
-    await archive.updateCacheInfo();
+    await archive.updateLibraryInfo();
 
-    ui.updateStatus('Non-starred cache cleared');
+    ui.updateStatus('Non-starred library cleared');
 
   } catch (error) {
 
@@ -937,7 +937,8 @@ function setupDragAndDrop() {
 
           closeHistoryPanel();
 
-          await archive.openLocalArchive(file.path, file.name);
+          // Use the File object directly instead of file.path (which doesn't exist in browsers)
+          await archive.openLocalArchive(file, file.name);
 
         } catch (error) {
 
@@ -985,7 +986,7 @@ function attachEventListeners() {
 
   elements.settingsBtn.addEventListener('click', toggleSettingsPanel);
 
-  elements.cacheSizeSelect.addEventListener('change', saveSettings);
+  elements.librarySizeSelect.addEventListener('change', saveSettings);
 
   elements.autoLoadFromClipboardSelect.addEventListener('change', saveSettings);
 
@@ -1019,7 +1020,7 @@ function attachEventListeners() {
 
   elements.listBackupsBtn.addEventListener('click', listAvailableBackups);
 
-  elements.clearCacheBtn.addEventListener('click', clearCache);
+  elements.clearLibraryBtn.addEventListener('click', clearLibrary);
 
   const scrollHandler = gallery.getScrollHandler();
 
@@ -1041,7 +1042,7 @@ async function initialize() {
 
     loadAdjacent: archive.loadAdjacentArchive,
 
-    updateCacheInfo: archive.updateCacheInfo
+    updateLibraryInfo: archive.updateLibraryInfo
 
   });
 
@@ -1061,7 +1062,7 @@ async function initialize() {
 
   await historyController.refreshHistory();
 
-  await archive.updateCacheInfo();
+  await archive.updateLibraryInfo();
 
   await applyClipboardAutoload();
 

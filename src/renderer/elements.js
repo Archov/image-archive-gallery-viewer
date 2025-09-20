@@ -33,21 +33,21 @@ export function getElements() {
     selectNoneBtn: document.getElementById('selectNoneBtn'),
     historyBtn: document.getElementById('historyBtn'),
     settingsBtn: document.getElementById('settingsBtn'),
-    cacheSizeSelect: document.getElementById('cacheSize'),
+    librarySizeSelect: document.getElementById('librarySize'),
     autoLoadFromClipboardSelect: document.getElementById('autoLoadFromClipboard'),
     maxHistoryItemsSelect: document.getElementById('maxHistoryItems'),
     allowFullscreenUpscalingSelect: document.getElementById('allowFullscreenUpscaling'),
     autoLoadAdjacentArchivesSelect: document.getElementById('autoLoadAdjacentArchives'),
     backupDatabaseBtn: document.getElementById('backupDatabaseBtn'),
-    clearCacheBtn: document.getElementById('clearCacheBtn'),
+    clearLibraryBtn: document.getElementById('clearLibraryBtn'),
     listBackupsBtn: document.getElementById('listBackupsBtn'),
     backupStatus: document.getElementById('backupStatus'),
     backupList: document.getElementById('backupList'),
     backupItems: document.getElementById('backupItems'),
     clearSelectedBtn: document.getElementById('clearSelectedBtn'),
-    cacheUsed: document.getElementById('cacheUsed'),
-    cacheAvailable: document.getElementById('cacheAvailable'),
+    libraryUsed: document.getElementById('libraryUsed'),
+    libraryAvailable: document.getElementById('libraryAvailable'),
     starredCount: document.getElementById('starredCount'),
-    cacheBarFill: document.getElementById('cacheBarFill')
+    libraryBarFill: document.getElementById('libraryBarFill')
   };
 }
