@@ -1,7 +1,7 @@
 {
-  "name": "kemono-archive-gallery",
+  "name": "archive-image-gallery",
   "version": "1.0.0",
-  "description": "Desktop gallery viewer for ZIP/RAR/7Z archives from Kemono",
+  "description": "Desktop gallery viewer for ZIP/RAR/7Z archives",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -13,7 +13,6 @@
     "dist": "electron-builder"
   },
   "keywords": [
-    "kemono",
     "archive",
     "gallery",
     "image",
@@ -32,8 +31,8 @@
     "uuid": "^9.0.1"
   },
   "build": {
-    "appId": "com.yourname.kemono-archive-gallery",
-    "productName": "Kemono Archive Gallery",
+    "appId": "com.yourname.archive-image-gallery",
+    "productName": "Archive Image Gallery",
     "directories": {
       "output": "dist"
     },

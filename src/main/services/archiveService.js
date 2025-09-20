@@ -23,7 +23,7 @@ function normalizeFileUrl(filePath) {
 
 
 async function createSessionExtractDir(archiveId) {
-  const baseDir = path.join(os.tmpdir(), 'kemono-gallery', archiveId);
+  const baseDir = path.join(os.tmpdir(), 'archive-gallery', archiveId);
   await fs.rm(baseDir, { recursive: true, force: true });
   await fs.mkdir(baseDir, { recursive: true });
   return baseDir;
@@ -337,7 +337,7 @@ async function extractImage(archiveId, imageId) {
   }
 
   const archiveExt = path.extname(archivePath).toLowerCase() || getArchiveExtension(archive.url || '');
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kemono-image-'));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-image-'));
   const entryName = (image.originalName || image.name || String(image.id)).replace(/\\/g, '/');
   const ext = path.extname(entryName) || '.img';
   const safeName = sanitizeFilename(path.basename(entryName, ext)) || image.id;

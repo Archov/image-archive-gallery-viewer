@@ -4,7 +4,7 @@ const path = require('path');
 console.log('🌱 Seeding image gallery with REAL cached files...\n');
 
 // File paths
-const appDataDir = path.join(process.env.USERPROFILE || process.env.HOME, '.kemono-gallery');
+const appDataDir = path.join(process.env.USERPROFILE || process.env.HOME, '.archive-image-gallery');
 const cacheDir = path.join(appDataDir, 'cache');
 const databasePath = path.join(appDataDir, 'database.json');
 const historyPath = path.join(appDataDir, 'history.json');

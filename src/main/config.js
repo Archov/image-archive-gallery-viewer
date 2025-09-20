@@ -1,7 +1,7 @@
 const path = require('path');
 const os = require('os');
 
-const appDataDir = path.join(os.homedir(), '.kemono-gallery');
+const appDataDir = path.join(os.homedir(), '.archive-image-gallery');
 const cacheDir = path.join(appDataDir, 'cache');
 const backupDir = path.join(appDataDir, 'backups');
 const databaseFile = path.join(appDataDir, 'database.json');
