@@ -470,9 +470,9 @@ export function createArchiveController({ state, elements, ui, electron, gallery
           await historyController.refreshHistory({ selectId: historyItem.id });
         }
 
-        ui.updateStatus(`Loaded ${images.length} images from cache`);
+        ui.updateStatus(`Loaded ${images.length} images from library`);
       } catch (error) {
-        ui.updateStatus(`Error loading from cache: ${error.message}`, true);
+        ui.updateStatus(`Error loading from library: ${error.message}`, true);
       }
     } else {
       elements.urlInput.value = historyItem.url;

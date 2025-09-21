@@ -7,7 +7,7 @@ export const state = {
   loadedArchiveIds: new Set(),
   historyItems: [],
   settings: {
-    cacheSize: 2,
+    librarySize: 2,
     autoLoadFromClipboard: true,
     maxHistoryItems: 100,
     allowFullscreenUpscaling: false,

@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleHistoryStar: (historyId) => ipcRenderer.invoke('toggle-history-star', historyId),
   clearHistory: () => ipcRenderer.invoke('clear-history'),
   
-  // Library management (renamed from cache)
+  // Library management
   getLibraryInfo: () => ipcRenderer.invoke('get-library-info'),
   clearLibrary: () => ipcRenderer.invoke('clear-library'),
   

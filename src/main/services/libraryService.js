@@ -150,7 +150,7 @@ async function clearLibrary() {
           delete database.images[imageId];
         }
       });
-
+      
     } catch (error) {
       console.warn(`Failed to clear archive ${archive.id}:`, error);
     }

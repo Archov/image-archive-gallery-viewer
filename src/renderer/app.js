@@ -765,9 +765,9 @@ async function clearLibrary() {
 
   } catch (error) {
 
-    console.error('Failed to clear cache:', error);
+    console.error('Failed to clear library:', error);
 
-    ui.updateStatus('Failed to clear cache', true);
+    ui.updateStatus('Failed to clear library', true);
 
   }
 

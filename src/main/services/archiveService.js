@@ -1,5 +1,6 @@
-const { fileURLToPath } = require('url');
 const fs = require('fs').promises;
+const { fileURLToPath } = require('url');
+const { dialog } = require('electron');
 const path = require('path');
 const { createHash } = require('crypto');
 const os = require('os');
@@ -19,8 +20,18 @@ const { getDatabase, saveDatabase } = require('./databaseService');
 const { libraryDir } = require('../config');
 const { v4: uuidv4 } = require('uuid');
 
-function normalizeFileUrl(filePath) {
-  return `file://${filePath.replace(/\\/g, '/')}`;
+// Helper function for archive extraction
+async function extractArchive(extension, archivePath, extractPath) {
+  switch (extension.toLowerCase()) {
+    case '.zip':
+      return extractZip(archivePath, extractPath);
+    case '.rar':
+      return extractRar(archivePath, extractPath);
+    case '.7z':
+      return extract7z(archivePath, extractPath);
+    default:
+      throw new Error('Unsupported archive format');
+  }
 }
 
 async function createSessionExtractDir(archiveId) {
@@ -147,6 +158,7 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
           name: img.name,
           url: img.url,
           starred: Boolean(img.starred),
+
           archiveName: archive.displayName || path.basename(sourceUrl)
         }));
 
@@ -192,6 +204,7 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
       starred: Boolean(img.starred),
       archiveName: path.basename(url)
     }));
+
 
     // Add to library database
     database.archives[archiveId] = {
@@ -329,22 +342,36 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
       path: extractedImages[0].path
     } : 'No images');
 
-    const metadata = extractedImages.map(img => ({
-      id: img.id,
-      name: img.name,
-      originalName: (img.originalName || img.name || '').replace(/\\/g, '/'),
-      relativePath: (img.relativePath || img.originalName || img.name || '').replace(/\\/g, '/'),
-      size: img.size,
-      starred: Boolean(img.starred)
-    }));
+    const choice = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Move to Library', 'Copy to Library', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      title: 'Add Archive to Library',
+      message: `Do you want to move or copy "${path.basename(filePath)}" to the library?`
+    });
 
-    const sessionImages = extractedImages.map(img => ({
-      id: img.id,
-      name: img.name,
-      url: img.url,
-      starred: Boolean(img.starred),
-      archiveName: path.basename(filePath)
-    }));
+    if (choice.response === 2) { // Cancel
+      throw new Error('User cancelled archive import');
+    }
+
+    const shouldMove = choice.response === 0;
+
+    const archiveExt = path.extname(filePath);
+    const archivePath = path.join(libraryDir, `${archiveId}${archiveExt}`);
+    await fs.mkdir(libraryDir, { recursive: true });
+
+    if (shouldMove) {
+      await fs.rename(filePath, archivePath);
+      console.log(`Local archive moved to library: ${archivePath}`);
+    } else {
+      await fs.copyFile(filePath, archivePath);
+      console.log(`Local archive copied to library: ${archivePath}`);
+    }
+
+    const archiveStat = await fs.stat(archivePath);
+
+    const metadata = await getArchiveMetadata(archivePath);
 
     console.log(`Debug: Created ${sessionImages.length} session images`);
     console.log(`Debug: First session image:`, sessionImages[0] ? {
@@ -459,17 +486,29 @@ async function toggleImageStar(archiveId, imageId) {
   return { starred: image.starred };
 }
 
-async function extractArchive(extension, archivePath, extractPath) {
-  switch (extension.toLowerCase()) {
-    case '.zip':
-      return extractZip(archivePath, extractPath);
-    case '.rar':
-      return extractRar(archivePath, extractPath);
-    case '.7z':
-      return extract7z(archivePath, extractPath);
-    default:
-      throw new Error('Unsupported archive format');
-  }
+async function extractArchiveToTemp(archivePath, extractPath) {
+  const ext = path.extname(archivePath).toLowerCase();
+  return await extractArchive(ext, archivePath, extractPath);
+}
+
+async function getArchiveMetadata(archivePath) {
+  const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-metadata-'));
+  const ext = path.extname(archivePath).toLowerCase();
+  const extractedImages = await extractArchive(ext, archivePath, sessionDir);
+
+  const metadata = extractedImages.map(img => ({
+    id: img.id,
+    name: img.name,
+    originalName: (img.originalName || img.name || '').replace(/\\/g, '/'),
+    relativePath: (img.relativePath || img.originalName || img.name || '').replace(/\\/g, '/'),
+    size: img.size,
+    starred: Boolean(img.starred)
+  }));
+
+  // Cleanup temp directory
+  await fs.rm(sessionDir, { recursive: true, force: true });
+
+  return metadata;
 }
 
 async function fileExists(targetPath) {

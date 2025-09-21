@@ -116,7 +116,6 @@ function registerHandlers(ipcMain, { getMainWindow }) {
     return extractImage(archiveId, imageId);
   });
 
-  // Updated to use library terminology
   ipcMain.handle('clear-library', async () => {
     await clearLibrary();
   });
