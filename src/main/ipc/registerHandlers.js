@@ -57,7 +57,7 @@ function registerHandlers(ipcMain, { getMainWindow }) {
       type: 'question',
       title: 'Add Archive to Library',
       message: `How would you like to add this archive to your library?`,
-      detail: `File: ${filePath}\\n\\nMove: Moves the original file to your library (recommended)\\nCopy: Keeps the original file and creates a copy in your library`,
+      detail: `File: ${filePath}\n\nMove: Moves the original file to your library (recommended)\nCopy: Keeps the original file and creates a copy in your library`,
       buttons: ['Move to Library', 'Copy to Library', 'Cancel'],
       defaultId: 0,
       cancelId: 2

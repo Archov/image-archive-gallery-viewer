@@ -21,7 +21,23 @@ const { libraryDir } = require('../config');
 const { v4: uuidv4 } = require('uuid');
 
 function normalizeFileUrl(filePath) {
-  // Validate and sanitize the file path to prevent path traversal
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('Invalid file path provided');
+  }
+  return pathToFileURL(path.resolve(filePath)).href;
+}
+
+function safePathJoin(base, ...segments) {
+  const resolvedBase = path.resolve(base);
+  const resolved = path.resolve(resolvedBase, ...segments.map(String));
+  if (resolved !== resolvedBase && !resolved.startsWith(resolvedBase + path.sep)) {
+    throw new Error('Path traversal detected');
+  }
+  return resolved;
+}
+
+function safePathResolve(filePath) {
+  // Validate file path to prevent path traversal
   if (!filePath || typeof filePath !== 'string') {
     throw new Error('Invalid file path provided');
   }
@@ -31,26 +47,7 @@ function normalizeFileUrl(filePath) {
     throw new Error('Path traversal detected in file path');
   }
   
-  return pathToFileURL(path.resolve(filePath)).href;
-}
-
-function safePathJoin(...pathSegments) {
-  // Validate all path segments to prevent path traversal
-  for (const segment of pathSegments) {
-    if (typeof segment !== 'string') {
-      throw new Error('Invalid path segment type');
-    }
-    if (segment.includes('..') || segment.includes('~')) {
-      throw new Error('Path traversal detected in path segment');
-    }
-  }
-  
-  const joinedPath = path.join(...pathSegments);
-  
-  // Additional validation: ensure the resolved path doesn't escape expected directories
-  const resolvedPath = path.resolve(joinedPath);
-  
-  return joinedPath;
+  return path.resolve(filePath);
 }
 
 // Helper function for archive extraction
@@ -281,14 +278,18 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
 
 async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
   const { copyToLibrary = null, archiveId: providedArchiveId } = options; // null = ask user, true = copy, false = move
-  const resolvedPath = path.resolve(filePath);
-  const resolvedLibraryDir = path.resolve(libraryDir);
+  const resolvedPath = safePathResolve(filePath);
+  const resolvedLibraryDir = safePathResolve(libraryDir);
   let archiveId = providedArchiveId || createHash('md5').update(filePath).digest('hex');
   
   // If filePath is inside libraryDir, derive ID from parent directory
   if (!providedArchiveId && (resolvedPath + path.sep).startsWith(resolvedLibraryDir + path.sep)) {
     // Inside library: derive id from parent directory (../library/<archiveId>/archive.ext)
-    archiveId = path.basename(path.dirname(resolvedPath));
+    const pathParts = resolvedPath.split(path.sep);
+    const libraryIndex = pathParts.findIndex(part => part === path.basename(resolvedLibraryDir));
+    if (libraryIndex >= 0 && libraryIndex + 1 < pathParts.length) {
+      archiveId = pathParts[libraryIndex + 1];
+    }
   }
   
   const database = getDatabase();
@@ -301,7 +302,7 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
     const known = database.archives[archiveId];
     if (known && known.libraryPath && known.archiveFileName) {
       const expected = safePathJoin(known.libraryPath, known.archiveFileName);
-      if (path.resolve(expected) === resolvedPath && await fileExists(expected)) {
+      if (safePathResolve(expected) === resolvedPath && await fileExists(expected)) {
         const sessionDir = await createSessionExtractDir(archiveId);
         const archiveExt = path.extname(expected).toLowerCase();
         const extractedImages = await extractArchive(archiveExt, expected, sessionDir);

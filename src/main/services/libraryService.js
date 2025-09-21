@@ -207,7 +207,7 @@ async function getLibraryInfo() {
     return bd - ad;
   });
 
-  return libraryStats;
+  return { ...libraryStats, totalArchiveSize: libraryStats.totalSize };
 }
 
 async function fileExists(targetPath) {

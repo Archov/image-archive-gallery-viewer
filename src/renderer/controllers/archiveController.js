@@ -191,7 +191,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
   async function updateLibraryInfo() {
     try {
       const libraryInfo = await electron.getLibraryInfo();
-      const used = Number(libraryInfo.totalArchiveSize) || 0;
+      const used = Number(libraryInfo.totalArchiveSize ?? libraryInfo.totalSize) || 0;
       const libSizeGB = Number.isFinite(Number(state.settings.librarySize))
         ? Number(state.settings.librarySize)
         : Number(state.settings.cacheSize ?? 2);
@@ -321,7 +321,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
 
       ui.showArchiveLoading();
       let newImages = [];
-      const newArchiveId = getArchiveIdFromUrl(adjacentItem.url);
+      let newArchiveId = getArchiveIdFromUrl(adjacentItem.url);
 
       if (adjacentItem.url.startsWith('file://')) {
         const result = await electron.loadLocalArchive(
@@ -330,9 +330,11 @@ export function createArchiveController({ state, elements, ui, electron, gallery
           { copyToLibrary: true, archiveId: tryExtractLibraryArchiveId(adjacentItem.url) }
         );
         newImages = result.images || [];
+        if (result?.archiveId) newArchiveId = result.archiveId;
       } else {
         const result = await electron.loadArchive(adjacentItem.url, state.settings.librarySize);
         newImages = result.images || [];
+        if (result?.archiveId) newArchiveId = result.archiveId;
       }
 
       if (!newImages.length) {
@@ -386,7 +388,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
 
     try {
       let images = [];
-      const archiveId = getArchiveIdFromUrl(item.url);
+      let archiveId = getArchiveIdFromUrl(item.url);
 
       if (item.url.startsWith('file://')) {
         const result = await electron.loadLocalArchive(
@@ -395,9 +397,11 @@ export function createArchiveController({ state, elements, ui, electron, gallery
           { copyToLibrary: true, archiveId: tryExtractLibraryArchiveId(item.url) }
         );
         images = result.images || [];
+        if (result?.archiveId) archiveId = result.archiveId;
       } else {
         const result = await electron.loadArchive(item.url, state.settings.librarySize);
         images = result.images || [];
+        if (result?.archiveId) archiveId = result.archiveId;
       }
 
       if (!images.length) {

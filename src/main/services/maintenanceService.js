@@ -5,15 +5,18 @@ const fs = require('fs').promises;
 const TEMP_BASE_DIR_NAME = 'kemono-gallery';
 const getTempBaseDir = () => path.join(os.tmpdir(), TEMP_BASE_DIR_NAME);
 
+function parseMaxAgeMinutes(input, fallback) {
+  const n = Number(input);
+  return Number.isFinite(n) && n >= 0 ? n * 60 * 1000 : fallback * 60 * 1000;
+}
+
 /**
  * Cleans up old temp extraction directories.
  * Each session creates a temp directory that should be cleaned up after use.
  */
 async function cleanupExtractedImages(maxAgeMinutes = 30) {
   const tempBaseDir = getTempBaseDir();
-  const minutes = Number(maxAgeMinutes);
-  const effectiveMinutes = Number.isFinite(minutes) && minutes >= 0 ? minutes : 30;
-  const maxAge = effectiveMinutes * 60 * 1000;
+  const maxAge = parseMaxAgeMinutes(maxAgeMinutes, 30);
   const now = Date.now();
 
   try {
@@ -38,7 +41,8 @@ async function cleanupExtractedImages(maxAgeMinutes = 30) {
           continue;
         }
         const resolved = await fs.realpath(sessionDir);
-        if (!resolved.startsWith(baseReal + path.sep)) {
+        const rel = path.relative(baseReal, resolved);
+        if (rel.startsWith('..') || path.isAbsolute(rel)) {
           console.warn(`Skipping path outside temp base: ${resolved}`);
           continue;
         }
@@ -70,7 +74,12 @@ async function cleanupAllTempDirectories() {
     if (exists) {
       const tmpReal = await fs.realpath(os.tmpdir());
       const baseReal = await fs.realpath(tempBaseDir).catch(() => null);
-      if (!baseReal || !baseReal.startsWith(tmpReal + path.sep)) {
+      if (!baseReal) {
+        console.warn(`Refusing to delete non-tmp path: ${tempBaseDir}`);
+        return;
+      }
+      const rel = path.relative(tmpReal, baseReal);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
         console.warn(`Refusing to delete non-tmp path: ${tempBaseDir}`);
         return;
       }
@@ -93,9 +102,7 @@ async function cleanupAllTempDirectories() {
  */
 async function cleanupArchiveMetadataDirs(maxAgeMinutes = 120) {
   const tempDir = os.tmpdir();
-  const minutes = Number(maxAgeMinutes);
-  const effectiveMinutes = Number.isFinite(minutes) && minutes >= 0 ? minutes : 120;
-  const maxAge = effectiveMinutes * 60 * 1000;
+  const maxAge = parseMaxAgeMinutes(maxAgeMinutes, 120);
   const now = Date.now();
 
   try {
