@@ -85,6 +85,37 @@ function safePathJoin(base, ...segments) {
   return result;
 }
 
+function sanitizeFilename(filename) {
+  if (!filename || typeof filename !== 'string') {
+    return 'archive';
+  }
+  
+  // Extract basename to remove any path components
+  const basename = path.basename(filename);
+  
+  // Remove null bytes and other dangerous characters
+  let sanitized = basename
+    .replace(/\0/g, '') // Remove null bytes
+    .replace(/[\/\\]/g, '-') // Replace path separators with dashes
+    .replace(/\.\./g, '-') // Replace directory traversal with dashes
+    .replace(/[<>:"|?*]/g, '-') // Replace Windows reserved characters
+    .replace(/\s+/g, '-') // Replace whitespace with dashes
+    .replace(/-+/g, '-') // Collapse multiple dashes
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing dashes
+  
+  // Limit length to reasonable max
+  if (sanitized.length > 100) {
+    sanitized = sanitized.substring(0, 100);
+  }
+  
+  // Fallback if result is empty
+  if (!sanitized || sanitized === '') {
+    return 'archive';
+  }
+  
+  return sanitized;
+}
+
 // Helper function for archive extraction
 async function extractArchive(extension, archivePath, extractPath) {
   switch (extension.toLowerCase()) {
@@ -636,7 +667,8 @@ async function loadLocalArchiveFromData(fileData, librarySizeGB) {
 
   // Create a temporary file path for processing
   const tempDir = os.tmpdir();
-  const tempFileName = `temp-${uuidv4()}-${name}`;
+  const safeBaseName = sanitizeFilename(name);
+  const tempFileName = `temp-${uuidv4()}-${safeBaseName}`;
   const tempFilePath = safePathJoin(tempDir, tempFileName);
 
   try {

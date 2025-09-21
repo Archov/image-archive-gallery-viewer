@@ -73,6 +73,15 @@ async function cleanupAllTempDirectories() {
     const exists = await fs.access(tempBaseDir).then(() => true).catch(() => false);
     if (exists) {
       const tmpReal = await fs.realpath(os.tmpdir());
+      const baseLstat = await fs.lstat(tempBaseDir).catch(() => null);
+      if (!baseLstat) {
+        console.warn(`Refusing to delete: base missing ${tempBaseDir}`);
+        return;
+      }
+      if (baseLstat.isSymbolicLink()) {
+        console.warn(`Refusing to delete symlink base dir: ${tempBaseDir}`);
+        return;
+      }
       const baseReal = await fs.realpath(tempBaseDir).catch(() => null);
       if (!baseReal) {
         console.warn(`Refusing to delete non-tmp path: ${tempBaseDir}`);
@@ -81,11 +90,6 @@ async function cleanupAllTempDirectories() {
       const rel = path.relative(tmpReal, baseReal);
       if (rel.startsWith('..') || path.isAbsolute(rel)) {
         console.warn(`Refusing to delete non-tmp path: ${tempBaseDir}`);
-        return;
-      }
-      const st = await fs.lstat(baseReal);
-      if (st.isSymbolicLink()) {
-        console.warn(`Refusing to delete symlink base dir: ${baseReal}`);
         return;
       }
       await fs.rm(baseReal, { recursive: true, force: true });
