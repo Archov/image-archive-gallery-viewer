@@ -5,7 +5,8 @@ const {
   loadLocalArchive,
   loadLocalArchiveFromData,
   extractImage,
-  toggleImageStar
+  toggleImageStar,
+  debugArchiveContents
 } = require('../services/archiveService');
 const {
   loadSettings,
@@ -77,6 +78,10 @@ function registerHandlers(ipcMain, { getMainWindow }) {
 
   ipcMain.handle('load-local-archive-from-data', async (event, fileData, librarySizeGB) => {
     return loadLocalArchiveFromData(fileData, librarySizeGB);
+  });
+
+  ipcMain.handle('debug-archive-contents', async (event, filePath) => {
+    return debugArchiveContents(filePath);
   });
 
   ipcMain.handle('load-settings', async () => {

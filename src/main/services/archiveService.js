@@ -10,12 +10,14 @@ const {
   extractSingleImageFromZip,
   extractSingleImageFromRar,
   extractSingleImageFrom7z,
-  sanitizeFilename
+  sanitizeFilename,
+  listArchiveContents
 } = require('./extractionService');
 const { downloadFile } = require('./downloadService');
 const { manageLibrary } = require('./libraryService');
 const { getDatabase, saveDatabase } = require('./databaseService');
 const { libraryDir } = require('../config');
+const { v4: uuidv4 } = require('uuid');
 
 function normalizeFileUrl(filePath) {
   return `file://${filePath.replace(/\\/g, '/')}`;
@@ -269,8 +271,17 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
         };
       } else {
         // Archive missing from library but we have the original file path
-        // Treat this as a new local archive that needs to be added
+        // Remove the old database entry and treat this as a new local archive
         console.log(`Archive missing from library, will re-add from: ${filePath}`);
+        
+        // Remove old database entries
+        delete database.archives[archiveId];
+        Object.keys(database.images).forEach(imageId => {
+          if (database.images[imageId].archiveId === archiveId) {
+            delete database.images[imageId];
+          }
+        });
+        
         // Continue with normal local archive processing below
       }
     }
@@ -310,6 +321,14 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
     const sessionDir = await createSessionExtractDir(archiveId);
     const extractedImages = await extractArchive(ext, libraryArchivePath, sessionDir);
 
+    console.log(`Debug: Extracted ${extractedImages.length} images to session directory: ${sessionDir}`);
+    console.log(`Debug: First extracted image:`, extractedImages[0] ? {
+      id: extractedImages[0].id,
+      name: extractedImages[0].name,
+      url: extractedImages[0].url,
+      path: extractedImages[0].path
+    } : 'No images');
+
     const metadata = extractedImages.map(img => ({
       id: img.id,
       name: img.name,
@@ -326,6 +345,24 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
       starred: Boolean(img.starred),
       archiveName: path.basename(filePath)
     }));
+
+    console.log(`Debug: Created ${sessionImages.length} session images`);
+    console.log(`Debug: First session image:`, sessionImages[0] ? {
+      id: sessionImages[0].id,
+      name: sessionImages[0].name,
+      url: sessionImages[0].url,
+      archiveName: sessionImages[0].archiveName
+    } : 'No session images');
+
+    // Validate that extracted files actually exist
+    for (const img of extractedImages) {
+      try {
+        await fs.access(img.path);
+        console.log(`Debug: File exists: ${img.path}`);
+      } catch (error) {
+        console.error(`Debug: File does not exist: ${img.path}`, error.message);
+      }
+    }
 
     // Add to library database
     database.archives[archiveId] = {
@@ -360,12 +397,15 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
     const librarySizeBytes = (librarySizeGB || database.settings.librarySize || 2) * 1024 * 1024 * 1024;
     await manageLibrary(librarySizeBytes);
 
-    return { 
+    const result = { 
       images: sessionImages, 
       archiveId,
       addedToLibrary: true,
       wasCopied: shouldCopy
     };
+
+    console.log(`Debug: Returning result with ${result.images.length} images`);
+    return result;
   } catch (error) {
     const libraryPath = path.join(libraryDir, archiveId);
     await cleanupLibraryDirectory(libraryPath);
@@ -441,17 +481,75 @@ async function fileExists(targetPath) {
   }
 }
 
-async function cleanupLibraryDirectory(targetPath) {
+async function cleanupLibraryDirectory(libraryPath) {
   try {
-    await fs.rm(targetPath, { recursive: true, force: true });
-  } catch (cleanupError) {
-    console.warn('Failed to clean up library directory:', cleanupError.message);
+    if (await fileExists(libraryPath)) {
+      await fs.rm(libraryPath, { recursive: true, force: true });
+      console.log(`Cleaned up library directory: ${libraryPath}`);
+    }
+  } catch (error) {
+    console.warn(`Failed to cleanup library directory ${libraryPath}:`, error);
+  }
+}
+
+async function loadLocalArchiveFromData(fileData, librarySizeGB) {
+  const { name, data, size, copyToLibrary = null } = fileData;
+
+  // Create a temporary file path for processing
+  const tempDir = os.tmpdir();
+  const tempFileName = `temp-${uuidv4()}-${name}`;
+  const tempFilePath = path.join(tempDir, tempFileName);
+
+  try {
+    // Write the data to a temporary file
+    const buffer = Buffer.from(data);
+    await fs.writeFile(tempFilePath, buffer);
+
+    // Use the existing loadLocalArchive function
+    const result = await loadLocalArchive(tempFilePath, librarySizeGB, { copyToLibrary });
+
+    // Clean up temp file
+    await fs.unlink(tempFilePath).catch(() => {}); // Ignore cleanup errors
+
+    return result;
+  } catch (error) {
+    // Clean up temp file on error
+    await fs.unlink(tempFilePath).catch(() => {});
+    throw error;
+  }
+}
+
+async function debugArchiveContents(filePath) {
+  try {
+    console.log(`Debug: Listing contents of archive: ${filePath}`);
+    const contents = await listArchiveContents(filePath);
+    const imageFiles = contents.filter(item => item.isImage);
+    
+    console.log(`Debug: Found ${contents.length} total entries, ${imageFiles.length} image files`);
+    if (imageFiles.length === 0) {
+      console.log('Debug: No image files found. All entries:');
+      contents.forEach(item => {
+        console.log(`  - ${item.name} (${item.isDirectory ? 'directory' : 'file'})`);
+      });
+    } else {
+      console.log('Debug: Image files found:');
+      imageFiles.forEach(img => {
+        console.log(`  - ${img.name}`);
+      });
+    }
+    
+    return contents;
+  } catch (error) {
+    console.error(`Debug: Error listing archive contents: ${error.message}`);
+    throw error;
   }
 }
 
 module.exports = {
   loadArchiveFromUrl,
   loadLocalArchive,
+  loadLocalArchiveFromData,
   extractImage,
-  toggleImageStar
+  toggleImageStar,
+  debugArchiveContents
 };
