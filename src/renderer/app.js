@@ -58,7 +58,11 @@ const historyController = {
 
         .map(item => item.id);
 
-      const nextSelected = new Set(loadedHistoryIds);
+      // Preserve existing selections and add newly loaded items
+      const nextSelected = new Set(state.selectedHistoryItems);
+      
+      // Add all loaded archive IDs to selections
+      loadedHistoryIds.forEach(id => nextSelected.add(id));
 
       if (selectId) {
 

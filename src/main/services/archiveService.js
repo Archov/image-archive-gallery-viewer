@@ -30,24 +30,9 @@ function safePathResolve(inputPath) {
     throw new Error('Path traversal detected in file path');
   }
   
-  // Use a more controlled approach to path resolution
-  const normalizedPath = inputPath.replace(/\\/g, '/');
-  const pathParts = normalizedPath.split('/').filter(part => part && part !== '.');
-  
-  // Build path manually to avoid path.resolve with user input
-  let resolved = '';
-  if (path.isAbsolute(normalizedPath)) {
-    resolved = path.sep;
-  }
-  
-  for (const part of pathParts) {
-    if (part === '..') {
-      throw new Error('Path traversal detected');
-    }
-    resolved = path.join(resolved, part);
-  }
-  
-  return resolved || '.';
+  // For trusted system paths, use path.resolve directly since they're not user input
+  // This handles Windows drive letters and absolute paths correctly
+  return path.resolve(inputPath);
 }
 
 function normalizeFileUrl(filePath) {
@@ -85,36 +70,6 @@ function safePathJoin(base, ...segments) {
   return result;
 }
 
-function sanitizeFilename(filename) {
-  if (!filename || typeof filename !== 'string') {
-    return 'archive';
-  }
-  
-  // Extract basename to remove any path components
-  const basename = path.basename(filename);
-  
-  // Remove null bytes and other dangerous characters
-  let sanitized = basename
-    .replace(/\0/g, '') // Remove null bytes
-    .replace(/[\/\\]/g, '-') // Replace path separators with dashes
-    .replace(/\.\./g, '-') // Replace directory traversal with dashes
-    .replace(/[<>:"|?*]/g, '-') // Replace Windows reserved characters
-    .replace(/\s+/g, '-') // Replace whitespace with dashes
-    .replace(/-+/g, '-') // Collapse multiple dashes
-    .replace(/^-+|-+$/g, ''); // Remove leading/trailing dashes
-  
-  // Limit length to reasonable max
-  if (sanitized.length > 100) {
-    sanitized = sanitized.substring(0, 100);
-  }
-  
-  // Fallback if result is empty
-  if (!sanitized || sanitized === '') {
-    return 'archive';
-  }
-  
-  return sanitized;
-}
 
 // Helper function for archive extraction
 async function extractArchive(extension, archivePath, extractPath) {
@@ -344,6 +299,7 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
 
 async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
   const { copyToLibrary = null, archiveId: providedArchiveId } = options; // null = ask user, true = copy, false = move
+  console.log(`loadLocalArchive called with filePath: ${filePath}, archiveId: ${providedArchiveId}`);
   const resolvedPath = safePathResolve(filePath);
   const resolvedLibraryDir = safePathResolve(libraryDir);
   let archiveId = providedArchiveId || createHash('md5').update(filePath).digest('hex');
@@ -358,6 +314,7 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
     }
   }
   
+  console.log(`Final archiveId: ${archiveId}`);
   const database = getDatabase();
 
   // Star restoration map (if we are rebuilding a missing library entry)
