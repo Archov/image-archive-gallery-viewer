@@ -25,3 +25,5 @@ yarn-debug.log*
 # Environment variables
 .env
 image-gallery.code-workspace
+image-archive-gallery-viewer.PR*
+GitHubPRComments.config.json

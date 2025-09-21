@@ -9,7 +9,7 @@ const historyFile = path.join(appDataDir, 'history.json');
 const settingsFile = path.join(appDataDir, 'settings.json');
 
 const DEFAULT_SETTINGS = {
-  librarySize: 2,
+  librarySize: 2, // GB
   autoLoadFromClipboard: true,
   maxHistoryItems: 100,
   allowFullscreenUpscaling: false,

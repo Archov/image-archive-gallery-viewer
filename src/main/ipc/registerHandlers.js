@@ -1,9 +1,12 @@
 const { createHash } = require('crypto');
+const { dialog } = require('electron');
 const {
   loadArchiveFromUrl,
   loadLocalArchive,
+  loadLocalArchiveFromData,
   extractImage,
-  toggleImageStar
+  toggleImageStar,
+  debugArchiveContents
 } = require('../services/archiveService');
 const {
   loadSettings,
@@ -19,7 +22,8 @@ const {
 } = require('../services/historyService');
 const {
   clearLibrary,
-  getLibraryUsage
+  getLibraryUsage,
+  getLibraryInfo
 } = require('../services/libraryService');
 const {
   listBackups,
@@ -45,8 +49,40 @@ function registerHandlers(ipcMain, { getMainWindow }) {
     return loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress });
   });
 
-  ipcMain.handle('load-local-archive', async (event, filePath) => {
-    return loadLocalArchive(filePath);
+  // Show move/copy dialog for local files
+  ipcMain.handle('show-local-archive-dialog', async (event, filePath) => {
+    const mainWindow = getMainWindow();
+    
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      title: 'Add Archive to Library',
+      message: `How would you like to add this archive to your library?`,
+      detail: `File: ${filePath}\n\nMove: Moves the original file to your library (recommended)\nCopy: Keeps the original file and creates a copy in your library`,
+      buttons: ['Move to Library', 'Copy to Library', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2
+    });
+
+    if (result.response === 2) {
+      return { cancelled: true };
+    }
+
+    return {
+      cancelled: false,
+      moveToLibrary: result.response === 0
+    };
+  });
+
+  ipcMain.handle('load-local-archive', async (event, filePath, librarySizeGB, options = {}) => {
+    return loadLocalArchive(filePath, librarySizeGB, options);
+  });
+
+  ipcMain.handle('load-local-archive-from-data', async (event, fileData, librarySizeGB) => {
+    return loadLocalArchiveFromData(fileData, librarySizeGB);
+  });
+
+  ipcMain.handle('debug-archive-contents', async (event, filePath) => {
+    return debugArchiveContents(filePath);
   });
 
   ipcMain.handle('load-settings', async () => {
@@ -86,7 +122,7 @@ function registerHandlers(ipcMain, { getMainWindow }) {
   });
 
   ipcMain.handle('get-library-info', async () => {
-    return getLibraryUsage();
+    return getLibraryInfo();
   });
 
   ipcMain.handle('list-backups', async () => {

@@ -22,15 +22,35 @@ function tryExtractWithCommand(command, args) {
 }
 
 async function extractZip(archivePath, extractPath) {
-  const zip = new AdmZip(archivePath);
-  const entries = zip.getEntries();
-  const images = [];
-  const usedRelativePaths = new Set();
+  console.log(`Extracting ZIP archive: ${archivePath}`);
+  
+  try {
+    const zip = new AdmZip(archivePath);
+    const entries = zip.getEntries();
+    const images = [];
+    const usedRelativePaths = new Set();
 
+    console.log(`Found ${entries.length} entries in archive`);
+    
+    if (entries.length === 0) {
+      console.warn('Archive appears to be empty');
+      return images;
+    }
+  
   for (const entry of entries) {
-    if (entry.isDirectory) continue;
+    if (entry.isDirectory) {
+      console.log(`Skipping directory: ${entry.entryName}`);
+      continue;
+    }
     const entryName = entry.entryName.replace(/\\/g, '/');
-    if (!isImageFile(entryName)) continue;
+    console.log(`Processing entry: ${entryName}`);
+    
+    if (!isImageFile(entryName)) {
+      console.log(`Skipping non-image file: ${entryName}`);
+      continue;
+    }
+    
+    console.log(`Found image file: ${entryName}`);
 
     const { outputPath, relativePath } = await resolveEntryOutputPath(
       extractPath,
@@ -55,7 +75,12 @@ async function extractZip(archivePath, extractPath) {
     });
   }
 
-  return images.sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true }));
+    console.log(`Extraction complete. Found ${images.length} images.`);
+    return images.sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true }));
+  } catch (error) {
+    console.error(`Error extracting ZIP archive ${archivePath}:`, error);
+    throw new Error(`Failed to extract ZIP archive: ${error.message}`);
+  }
 }
 
 async function extractRar(archivePath, extractPath) {
@@ -181,7 +206,7 @@ async function scanDirectoryForImages(dirPath, baseDir = dirPath) {
 }
 
 function isImageFile(filename) {
-  return /\.(avif|webp|png|jpe?g|gif|bmp|tiff?)$/i.test(filename);
+  return /\.(avif|webp|png|jpe?g|gif|bmp|tiff?|jfif|jp2|j2k|j2c|jpc|jpx|ico|psd|svg)$/i.test(filename);
 }
 
 function sanitizeFilename(filename) {
@@ -301,6 +326,40 @@ async function extractSingleImageFrom7z(archivePath, imageName, outputPath) {
   });
 }
 
+async function listArchiveContents(archivePath) {
+  console.log(`Listing contents of archive: ${archivePath}`);
+  
+  const ext = path.extname(archivePath).toLowerCase();
+  
+  if (ext === '.zip') {
+    try {
+      const zip = new AdmZip(archivePath);
+      const entries = zip.getEntries();
+      
+      console.log(`Archive contains ${entries.length} entries:`);
+      entries.forEach((entry, index) => {
+        console.log(`  ${index + 1}. ${entry.entryName} (${entry.isDirectory ? 'directory' : 'file'})`);
+        if (!entry.isDirectory) {
+          const isImage = isImageFile(entry.entryName);
+          console.log(`     -> ${isImage ? 'IMAGE FILE' : 'not an image'}`);
+        }
+      });
+      
+      return entries.map(entry => ({
+        name: entry.entryName,
+        isDirectory: entry.isDirectory,
+        isImage: !entry.isDirectory && isImageFile(entry.entryName)
+      }));
+    } catch (error) {
+      console.error(`Error reading ZIP archive: ${error.message}`);
+      throw error;
+    }
+  } else {
+    console.log(`Archive format ${ext} not supported for listing`);
+    return [];
+  }
+}
+
 module.exports = {
   extractZip,
   extractRar,
@@ -310,6 +369,7 @@ module.exports = {
   extractSingleImageFrom7z,
   scanDirectoryForImages,
   sanitizeFilename,
-  isImageFile
+  isImageFile,
+  listArchiveContents
 };
 

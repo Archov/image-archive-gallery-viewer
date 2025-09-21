@@ -48,8 +48,12 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       });
       gallery.displayGallery(result.images, filename);
 
-      state.selectedHistoryItems.clear();
-      state.loadedArchiveIds.clear();
+      // Clear selections only when starting fresh (no current images)
+      if (state.currentImages.length === 0) {
+        state.selectedHistoryItems.clear();
+        state.loadedArchiveIds.clear();
+      }
+      console.log(`Adding to loadedArchiveIds: ${result.archiveId}`);
       state.loadedArchiveIds.add(result.archiveId);
       state.currentArchiveId = result.archiveId;
 
@@ -77,14 +81,48 @@ export function createArchiveController({ state, elements, ui, electron, gallery
     }
   }
 
-  async function openLocalArchive(filePath, displayName) {
+  async function openLocalArchive(file, displayName) {
     if (state.isArchiveLoading) return;
 
     state.isArchiveLoading = true;
 
     try {
-      ui.showLoading('Extracting Archive', 'Loading local archive...');
-      const images = await electron.loadLocalArchive(filePath);
+      ui.showLoading('Processing Archive', 'Reading file data...');
+      
+      // Check if we need to prompt for move/copy
+      const dialogResult = await electron.showLocalArchiveDialog(file.name);
+      
+      if (dialogResult.cancelled) {
+        ui.updateStatus('Archive loading cancelled');
+        return;
+      }
+      
+      // Read the file data as an ArrayBuffer
+      const fileData = await readFileAsArrayBuffer(file);
+      
+      ui.showLoading('Extracting Archive', 'Processing archive data...');
+      
+      const result = await electron.loadLocalArchiveFromData({
+        name: file.name,
+        data: new Uint8Array(fileData), // Send as TypedArray to avoid massive copies
+        size: file.size,
+        copyToLibrary: !dialogResult.moveToLibrary
+      }, state.settings.librarySize);
+      
+      let images;
+      let archiveIdFromResult = null;
+      if (result.needsUserChoice) {
+        // This shouldn't happen since we already showed the dialog
+        throw new Error('Unexpected user choice needed');
+      } else if (result.alreadyInLibrary) {
+        images = result.images;
+        archiveIdFromResult = result.archiveId || null;
+        ui.updateStatus('Archive was already in library', false);
+      } else {
+        images = result.images;
+        archiveIdFromResult = result.archiveId || null;
+        ui.updateStatus(result.wasCopied ? 'Archive copied to library' : 'Archive moved to library', false);
+      }
 
       if (!images?.length) {
         throw new Error('No images found in local archive');
@@ -92,20 +130,26 @@ export function createArchiveController({ state, elements, ui, electron, gallery
 
       gallery.displayGallery(images, displayName);
 
-      const archiveId = getArchiveIdFromUrl(`file://${filePath}`);
+      const archiveId = archiveIdFromResult || getArchiveIdFromUrl(`file://${displayName}`);
       images.forEach(img => {
         img.archiveName = displayName;
         img.originalArchiveId = archiveId;
       });
-      state.selectedHistoryItems.clear();
-      state.loadedArchiveIds.clear();
+      
+      // Clear selections only when starting fresh (no current images)
+      if (state.currentImages.length === 0) {
+        state.selectedHistoryItems.clear();
+        state.loadedArchiveIds.clear();
+      }
+      console.log(`Adding to loadedArchiveIds (local): ${archiveId}`);
       state.loadedArchiveIds.add(archiveId);
       state.currentArchiveId = archiveId;
 
-      await addToHistory(displayName, `file://${filePath}`, images.length);
+      const historyUrl = result.libraryArchivePath ? `file://${result.libraryArchivePath}` : `archive://${archiveId}`;
+      await addToHistory(displayName, historyUrl, images.length);
 
       if (historyController) {
-        await historyController.refreshHistory({ highlightUrl: `file://${filePath}` });
+        await historyController.refreshHistory({ highlightUrl: historyUrl });
       }
 
       await updateLibraryInfo();
@@ -118,6 +162,46 @@ export function createArchiveController({ state, elements, ui, electron, gallery
     } finally {
       ui.hideLoading();
       state.isArchiveLoading = false;
+    }
+  }
+  
+  function readFileAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function tryExtractLibraryArchiveId(fileUrl) {
+    try {
+      console.log(`tryExtractLibraryArchiveId called with: ${fileUrl}`);
+      const p = decodeURIComponent(new URL(fileUrl).pathname).replace(/\\/g, '/');
+      console.log(`Decoded pathname: ${p}`);
+      
+      // Only extract library ID if this is actually a library path
+      if (!p.includes('/library/')) {
+        console.log(`tryExtractLibraryArchiveId: Not a library path, returning null`);
+        return null;
+      }
+      
+      const parts = p.split('/').filter(Boolean);
+      console.log(`Path parts: ${JSON.stringify(parts)}`);
+      
+      // Find the library directory and extract the hash that follows it
+      const libraryIndex = parts.findIndex(part => part === 'library');
+      if (libraryIndex >= 0 && libraryIndex + 1 < parts.length) {
+        const result = parts[libraryIndex + 1];
+        console.log(`tryExtractLibraryArchiveId result: ${result}`);
+        return result;
+      }
+      
+      console.log(`tryExtractLibraryArchiveId: No library hash found, returning null`);
+      return null;
+    } catch (error) {
+      console.log(`tryExtractLibraryArchiveId error: ${error.message}`);
+      return null;
     }
   }
 
@@ -137,8 +221,11 @@ export function createArchiveController({ state, elements, ui, electron, gallery
   async function updateLibraryInfo() {
     try {
       const libraryInfo = await electron.getLibraryInfo();
-      const used = libraryInfo.totalSize;
-      const limit = state.settings.librarySize * 1024 * 1024 * 1024;
+      const used = Number(libraryInfo.totalArchiveSize ?? libraryInfo.totalSize) || 0;
+      const libSizeGB = Number.isFinite(Number(state.settings.librarySize))
+        ? Number(state.settings.librarySize)
+        : Number(state.settings.cacheSize ?? 2);
+      const limit = libSizeGB * 1024 * 1024 * 1024;
       const usedPercentage = limit > 0 ? (used / limit) * 100 : 0;
 
       if (elements.libraryUsed) {
@@ -215,42 +302,149 @@ export function createArchiveController({ state, elements, ui, electron, gallery
         ? state.historyItems
         : await electron.loadHistory();
 
-      if (!history.length) return null;
+      if (!history.length) {
+        console.log('No history items available for adjacent loading');
+        return null;
+      }
 
       const loadedIds = Array.from(state.loadedArchiveIds);
+      console.log(`Finding adjacent archive: direction=${direction}, loadedIds=${loadedIds.length}, loadedIds=${JSON.stringify(loadedIds)}`);
 
-      if (loadedIds.length > 1) {
-        const targetId = direction > 0 ? loadedIds[loadedIds.length - 1] : loadedIds[0];
-        const marker = history.find(item => getArchiveIdFromUrl(item.url) === targetId);
-        if (!marker) return null;
-        const markerIndex = history.indexOf(marker);
-        const adjacentIndex = markerIndex + direction;
-        if (adjacentIndex >= 0 && adjacentIndex < history.length) {
-          const candidate = history[adjacentIndex];
-          const candidateId = getArchiveIdFromUrl(candidate.url);
-          if (state.loadedArchiveIds.has(candidateId)) {
+      // Find the current archive being viewed based on the current image
+      const currentArchiveId = state.currentArchiveId;
+      console.log(`Current archive ID: ${currentArchiveId}`);
+      
+      if (!currentArchiveId) {
+        console.log('No current archive ID found');
+        return null;
+      }
+
+      // Create a filtered list of only the loaded archives in history order
+      const loadedHistoryItems = history.filter(item => {
+        const itemId = getArchiveIdFromUrl(item.url);
+        return state.loadedArchiveIds.has(itemId);
+      });
+      
+      console.log(`Loaded history items: ${loadedHistoryItems.map(h => h.name).join(', ')}`);
+      
+      // Find the current archive in the loaded items - try multiple approaches
+      let currentItem = loadedHistoryItems.find(item => getArchiveIdFromUrl(item.url) === currentArchiveId);
+      
+      if (!currentItem) {
+        // If direct ID match fails, try to find by archive name from current images
+        if (state.currentImages.length > 0) {
+          const currentArchiveName = state.currentImages[0]?.archiveName;
+          console.log(`Trying to find by archive name: ${currentArchiveName}`);
+          console.log(`Available loaded history items: ${loadedHistoryItems.map(h => `${h.name} (${getArchiveIdFromUrl(h.url)})`).join(', ')}`);
+          console.log(`Looking for current archive ID: ${currentArchiveId}`);
+          currentItem = loadedHistoryItems.find(item => {
+            const itemId = getArchiveIdFromUrl(item.url);
+            // Only match if both name AND ID match (to handle duplicate names)
+            const matches = item.name === currentArchiveName && itemId === currentArchiveId;
+            console.log(`Checking item: ${item.name} (${itemId}) - matches: ${matches} (name: ${item.name === currentArchiveName}, id: ${itemId === currentArchiveId})`);
+            return matches;
+          });
+        }
+      }
+      
+      if (!currentItem) {
+        // If current archive is not in history, try to find it in the full history and then look for next/previous
+        console.log(`Current archive not found in loaded history items, searching full history`);
+        currentItem = history.find(item => {
+          const itemId = getArchiveIdFromUrl(item.url);
+          // First try to match by ID, then by name only if ID doesn't match
+          if (itemId === currentArchiveId) {
+            return true;
+          }
+          // If we have current images, try to match by name but only if the item is actually loaded
+          if (state.currentImages.length > 0) {
+            const currentArchiveName = state.currentImages[0]?.archiveName;
+            return item.name === currentArchiveName && state.loadedArchiveIds.has(itemId);
+          }
+          return false;
+        });
+        
+        if (currentItem) {
+          const currentIndex = history.indexOf(currentItem);
+          const adjacentIndex = currentIndex + direction;
+          console.log(`Current item "${currentItem.name}" at index ${currentIndex} in full history, checking adjacent index ${adjacentIndex}`);
+          
+          if (adjacentIndex >= 0 && adjacentIndex < history.length) {
+            const candidate = history[adjacentIndex];
+            const candidateId = getArchiveIdFromUrl(candidate.url);
+            
+            // Only return if the adjacent archive is not already loaded
+            if (!state.loadedArchiveIds.has(candidateId)) {
+              console.log(`Found adjacent archive in full history: ${candidate.name}`);
+              return candidate;
+            } else {
+              console.log(`Adjacent archive already loaded: ${candidate.name}`);
+              return null;
+            }
+          } else {
+            console.log(`Adjacent index ${adjacentIndex} is out of bounds (full history length: ${history.length})`);
             return null;
           }
-          return candidate;
+        } else {
+          console.log(`No current item found for currentArchiveId: ${currentArchiveId}`);
+          console.log(`Available loaded items: ${loadedHistoryItems.map(h => `${h.name} (${getArchiveIdFromUrl(h.url)})`).join(', ')}`);
+          return null;
         }
+      }
+
+      const currentIndex = loadedHistoryItems.indexOf(currentItem);
+      const adjacentIndex = currentIndex + direction;
+      console.log(`Current item "${currentItem.name}" at index ${currentIndex} in loaded items, checking adjacent index ${adjacentIndex}`);
+      
+      if (adjacentIndex >= 0 && adjacentIndex < loadedHistoryItems.length) {
+        const candidate = loadedHistoryItems[adjacentIndex];
+        console.log(`Found adjacent archive in loaded items: ${candidate.name}`);
+        return candidate;
       } else {
-        const currentId = loadedIds[0];
-        const currentItem = history.find(item => getArchiveIdFromUrl(item.url) === currentId);
-        if (!currentItem) return null;
-        const currentIndex = history.indexOf(currentItem);
-        const adjacentIndex = currentIndex + direction;
-        if (adjacentIndex >= 0 && adjacentIndex < history.length) {
-          return history[adjacentIndex];
+        console.log(`Adjacent index ${adjacentIndex} is out of bounds (loaded items length: ${loadedHistoryItems.length})`);
+        
+        // If no adjacent item in loaded history, try to find adjacent in full history
+        console.log(`No adjacent item in loaded history, searching full history for adjacent archive`);
+        
+        // Find current item in full history
+        const fullHistoryCurrentItem = history.find(item => getArchiveIdFromUrl(item.url) === currentArchiveId);
+        if (fullHistoryCurrentItem) {
+          const fullCurrentIndex = history.indexOf(fullHistoryCurrentItem);
+          const fullAdjacentIndex = fullCurrentIndex + direction;
+          console.log(`Current item "${fullHistoryCurrentItem.name}" at index ${fullCurrentIndex} in full history, checking adjacent index ${fullAdjacentIndex}`);
+          
+          if (fullAdjacentIndex >= 0 && fullAdjacentIndex < history.length) {
+            const candidate = history[fullAdjacentIndex];
+            const candidateId = getArchiveIdFromUrl(candidate.url);
+            
+            // Only return if the adjacent archive is not already loaded
+            if (!state.loadedArchiveIds.has(candidateId)) {
+              console.log(`Found adjacent archive in full history: ${candidate.name}`);
+              return candidate;
+            } else {
+              console.log(`Adjacent archive already loaded: ${candidate.name}`);
+              return null;
+            }
+          } else {
+            console.log(`Adjacent index ${fullAdjacentIndex} is out of bounds (full history length: ${history.length})`);
+            return null;
+          }
+        } else {
+          console.log(`Current archive not found in full history`);
+          return null;
         }
       }
     } catch (error) {
       console.error('Failed to find adjacent archive:', error);
     }
+    console.log('No adjacent archive found');
     return null;
   }
 
   async function loadAdjacentArchive(direction) {
+    console.log(`loadAdjacentArchive called: direction=${direction}, autoLoadEnabled=${state.settings.autoLoadAdjacentArchives}, isLoading=${state.isArchiveLoading}`);
     if (!state.settings.autoLoadAdjacentArchives || state.isArchiveLoading) {
+      console.log('Adjacent loading skipped: setting disabled or already loading');
       return false;
     }
 
@@ -264,13 +458,21 @@ export function createArchiveController({ state, elements, ui, electron, gallery
 
       ui.showArchiveLoading();
       let newImages = [];
-      const newArchiveId = getArchiveIdFromUrl(adjacentItem.url);
+      let newArchiveId = getArchiveIdFromUrl(adjacentItem.url);
 
       if (adjacentItem.url.startsWith('file://')) {
-        newImages = await electron.loadLocalArchive(adjacentItem.url.replace('file://', ''));
+        const extractedId = tryExtractLibraryArchiveId(adjacentItem.url);
+        const result = await electron.loadLocalArchive(
+          adjacentItem.url.replace('file://', ''),
+          state.settings.librarySize,
+          { copyToLibrary: true, archiveId: extractedId || newArchiveId }
+        );
+        newImages = result.images || [];
+        if (result?.archiveId) newArchiveId = result.archiveId;
       } else {
         const result = await electron.loadArchive(adjacentItem.url, state.settings.librarySize);
         newImages = result.images || [];
+        if (result?.archiveId) newArchiveId = result.archiveId;
       }
 
       if (!newImages.length) {
@@ -289,6 +491,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
         state.currentIndex += newImages.length;
       }
 
+      console.log(`Adding to loadedArchiveIds (adjacent): ${newArchiveId}`);
       state.loadedArchiveIds.add(newArchiveId);
       state.selectedHistoryItems.add(adjacentItem.id);
       state.currentArchiveId = newArchiveId;
@@ -324,13 +527,21 @@ export function createArchiveController({ state, elements, ui, electron, gallery
 
     try {
       let images = [];
-      const archiveId = getArchiveIdFromUrl(item.url);
+      let archiveId = getArchiveIdFromUrl(item.url);
 
       if (item.url.startsWith('file://')) {
-        images = await electron.loadLocalArchive(item.url.replace('file://', ''));
+        const extractedId = tryExtractLibraryArchiveId(item.url);
+        const result = await electron.loadLocalArchive(
+          item.url.replace('file://', ''),
+          state.settings.librarySize,
+          { copyToLibrary: true, archiveId: extractedId || archiveId }
+        );
+        images = result.images || [];
+        if (result?.archiveId) archiveId = result.archiveId;
       } else {
         const result = await electron.loadArchive(item.url, state.settings.librarySize);
         images = result.images || [];
+        if (result?.archiveId) archiveId = result.archiveId;
       }
 
       if (!images.length) {
@@ -351,6 +562,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
         state.currentImages = [...state.currentImages, ...images];
       }
 
+      console.log(`Adding to loadedArchiveIds (single): ${archiveId}`);
       state.loadedArchiveIds.add(archiveId);
       state.selectedHistoryItems.add(item.id);
       state.currentArchiveId = archiveId;
@@ -403,13 +615,21 @@ export function createArchiveController({ state, elements, ui, electron, gallery
   }
 
   async function loadFromHistory(historyItem) {
+    // Clear selections when clicking on history items (not checkboxes)
     state.selectedHistoryItems.clear();
     state.loadedArchiveIds.clear();
 
     if (historyItem.url.startsWith('file://')) {
       try {
-        const images = await electron.loadLocalArchive(historyItem.url.replace('file://', ''));
-        const archiveId = getArchiveIdFromUrl(historyItem.url);
+        const extractedId = tryExtractLibraryArchiveId(historyItem.url);
+        const fallbackId = getArchiveIdFromUrl(historyItem.url);
+        const result = await electron.loadLocalArchive(
+          historyItem.url.replace('file://', ''),
+          state.settings.librarySize,
+          { copyToLibrary: true, archiveId: extractedId || fallbackId }
+        );
+         const images = result.images || [];
+         const archiveId = result.archiveId || fallbackId;
 
         images.forEach(img => {
           img.archiveName = historyItem.name;
@@ -417,6 +637,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
         });
 
         state.currentImages = images;
+        console.log(`Adding to loadedArchiveIds (history): ${archiveId}`);
         state.loadedArchiveIds.add(archiveId);
         state.selectedHistoryItems.add(historyItem.id);
         state.currentArchiveId = archiveId;

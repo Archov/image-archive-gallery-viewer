@@ -58,7 +58,11 @@ const historyController = {
 
         .map(item => item.id);
 
-      const nextSelected = new Set(loadedHistoryIds);
+      // Preserve existing selections and add newly loaded items
+      const nextSelected = new Set(state.selectedHistoryItems);
+      
+      // Add all loaded archive IDs to selections
+      loadedHistoryIds.forEach(id => nextSelected.add(id));
 
       if (selectId) {
 
@@ -142,7 +146,11 @@ async function loadSettings() {
 
     state.settings = { ...state.settings, ...settings };
 
-    elements.librarySizeSelect.value = state.settings.librarySize;
+    const size =
+      Number.isFinite(state.settings.librarySize) ? state.settings.librarySize :
+      Number.isFinite(state.settings.cacheSize) ? state.settings.cacheSize : 2;
+    state.settings.librarySize = size;
+    elements.librarySizeSelect.value = String(size);
 
     elements.autoLoadFromClipboardSelect.value = String(state.settings.autoLoadFromClipboard);
 
@@ -937,7 +945,8 @@ function setupDragAndDrop() {
 
           closeHistoryPanel();
 
-          await archive.openLocalArchive(file.path, file.name);
+          // Use the File object directly instead of file.path (which doesn't exist in browsers)
+          await archive.openLocalArchive(file, file.name);
 
         } catch (error) {
 

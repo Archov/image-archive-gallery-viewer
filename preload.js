@@ -3,7 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // Archive loading
   loadArchive: (url, librarySizeGB) => ipcRenderer.invoke('load-archive', url, librarySizeGB),
-  loadLocalArchive: (filePath) => ipcRenderer.invoke('load-local-archive', filePath),
+  showLocalArchiveDialog: (filePath) => ipcRenderer.invoke('show-local-archive-dialog', filePath),
+  loadLocalArchive: (filePath, librarySizeGB, options) => ipcRenderer.invoke('load-local-archive', filePath, librarySizeGB, options),
+  loadLocalArchiveFromData: (fileData, librarySizeGB) => ipcRenderer.invoke('load-local-archive-from-data', fileData, librarySizeGB),
   
   // Settings
   loadSettings: () => ipcRenderer.invoke('load-settings'),

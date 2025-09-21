@@ -24,12 +24,15 @@ export function debounce(func, wait) {
 }
 
 export function getArchiveIdFromUrl(url) {
+  console.log(`getArchiveIdFromUrl called with: ${url}`);
   let hash = 0;
   for (let i = 0; i < url.length; i += 1) {
     const char = url.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
     hash &= hash;
   }
-  return Math.abs(hash).toString(16).padStart(16, '0');
+  const result = Math.abs(hash).toString(16).padStart(16, '0');
+  console.log(`getArchiveIdFromUrl result: ${result}`);
+  return result;
 }
 
