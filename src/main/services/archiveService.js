@@ -1,5 +1,5 @@
 const fs = require('fs').promises;
-const { fileURLToPath } = require('url');
+const { pathToFileURL } = require('url');
 const { dialog } = require('electron');
 const path = require('path');
 const { createHash } = require('crypto');
@@ -19,6 +19,10 @@ const { manageLibrary } = require('./libraryService');
 const { getDatabase, saveDatabase } = require('./databaseService');
 const { libraryDir } = require('../config');
 const { v4: uuidv4 } = require('uuid');
+
+function normalizeFileUrl(filePath) {
+  return pathToFileURL(path.resolve(filePath)).href;
+}
 
 // Helper function for archive extraction
 async function extractArchive(extension, archivePath, extractPath) {
@@ -115,11 +119,11 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
           id: img.id,
           name: img.name,
           url: img.url,
-          starred: Boolean(img.starred),
+          starred: Boolean(database.images[img.id]?.starred),
           archiveName: archive.displayName || path.basename(url)
         }));
 
-        return { images: sessionImages, archiveId };
+        return { images: sessionImages, archiveId, libraryArchivePath };
       } else if (archive.sourceUrl || archive.url) {
         // Archive missing from library but we have URL - re-download for migration
         const sourceUrl = archive.sourceUrl || archive.url;
@@ -157,13 +161,12 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
           id: img.id,
           name: img.name,
           url: img.url,
-          starred: Boolean(img.starred),
-
+          starred: Boolean(database.images[img.id]?.starred),
           archiveName: archive.displayName || path.basename(sourceUrl)
         }));
 
         console.log(`Migration complete: ${sourceUrl} re-downloaded to library`);
-        return { images: sessionImages, archiveId };
+        return { images: sessionImages, archiveId, libraryArchivePath: newLibraryArchivePath };
       } else {
         // No way to recover this archive
         throw new Error(`Archive missing from library and no source URL available: ${archive.displayName || archiveId}`);
@@ -201,7 +204,7 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
       id: img.id,
       name: img.name,
       url: img.url,
-      starred: Boolean(img.starred),
+      starred: Boolean(database.images[img.id]?.starred),
       archiveName: path.basename(url)
     }));
 
@@ -238,7 +241,7 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
     const librarySizeBytes = (librarySizeLimitGB || 2) * 1024 * 1024 * 1024;
     await manageLibrary(librarySizeBytes);
 
-    return { images: sessionImages, archiveId };
+    return { images: sessionImages, archiveId, libraryArchivePath };
   } catch (error) {
     // Cleanup on error
     const libraryPath = path.join(libraryDir, archiveId);
@@ -248,8 +251,8 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
 }
 
 async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
-  const { copyToLibrary = null } = options; // null = ask user, true = copy, false = move
-  const archiveId = createHash('md5').update(filePath).digest('hex');
+  const { copyToLibrary = null, archiveId: providedArchiveId } = options; // null = ask user, true = copy, false = move
+  const archiveId = providedArchiveId || createHash('md5').update(filePath).digest('hex');
   const database = getDatabase();
 
   try {
@@ -273,21 +276,31 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
           id: img.id,
           name: img.name,
           url: img.url,
-          starred: Boolean(img.starred),
+          starred: Boolean(database.images[img.id]?.starred),
           archiveName: archive.displayName || path.basename(filePath)
         }));
 
         return { 
           images: sessionImages, 
           archiveId,
+          libraryArchivePath,
           alreadyInLibrary: true
         };
       } else {
         // Archive missing from library but we have the original file path
-        // Remove the old database entry and treat this as a new local archive
+        // Preserve starred data and migrate to new structure
         console.log(`Archive missing from library, will re-add from: ${filePath}`);
         
-        // Remove old database entries
+        // Store existing starred data for migration
+        const existingStarredImages = {};
+        Object.keys(database.images).forEach(imageId => {
+          if (database.images[imageId].archiveId === archiveId && database.images[imageId].starred) {
+            const image = database.images[imageId];
+            existingStarredImages[image.originalName || image.name] = true;
+          }
+        });
+        
+        // Remove old database entries but preserve starred data
         delete database.archives[archiveId];
         Object.keys(database.images).forEach(imageId => {
           if (database.images[imageId].archiveId === archiveId) {
@@ -296,10 +309,10 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
         });
         
         // Continue with normal local archive processing below
+        // The starred data will be restored during the new archive processing
       }
     }
 
-    const archiveStat = await fs.stat(filePath);
     const ext = path.extname(filePath).toLowerCase();
     
     // New local archive - need to add to library
@@ -326,8 +339,18 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
       await fs.copyFile(filePath, libraryArchivePath);
       console.log(`Archive copied to library: ${libraryArchivePath}`);
     } else {
-      await fs.rename(filePath, libraryArchivePath);
-      console.log(`Archive moved to library: ${libraryArchivePath}`);
+      try {
+        await fs.rename(filePath, libraryArchivePath);
+        console.log(`Archive moved to library: ${libraryArchivePath}`);
+      } catch (err) {
+        if (err.code === 'EXDEV') {
+          await fs.copyFile(filePath, libraryArchivePath);
+          await fs.unlink(filePath);
+          console.log(`Archive moved across devices (copy+unlink): ${libraryArchivePath}`);
+        } else {
+          throw err;
+        }
+      }
     }
 
     // Extract to temp for viewing
@@ -342,59 +365,12 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
       path: extractedImages[0].path
     } : 'No images');
 
-    const choice = await dialog.showMessageBox({
-      type: 'question',
-      buttons: ['Move to Library', 'Copy to Library', 'Cancel'],
-      defaultId: 0,
-      cancelId: 2,
-      title: 'Add Archive to Library',
-      message: `Do you want to move or copy "${path.basename(filePath)}" to the library?`
-    });
-
-    if (choice.response === 2) { // Cancel
-      throw new Error('User cancelled archive import');
-    }
-
-    const shouldMove = choice.response === 0;
-
-    const archiveExt = path.extname(filePath);
-    const archivePath = path.join(libraryDir, `${archiveId}${archiveExt}`);
-    await fs.mkdir(libraryDir, { recursive: true });
-
-    if (shouldMove) {
-      await fs.rename(filePath, archivePath);
-      console.log(`Local archive moved to library: ${archivePath}`);
-    } else {
-      await fs.copyFile(filePath, archivePath);
-      console.log(`Local archive copied to library: ${archivePath}`);
-    }
-
-    const archiveStat = await fs.stat(archivePath);
-
-    const metadata = await getArchiveMetadata(archivePath);
-
-    console.log(`Debug: Created ${sessionImages.length} session images`);
-    console.log(`Debug: First session image:`, sessionImages[0] ? {
-      id: sessionImages[0].id,
-      name: sessionImages[0].name,
-      url: sessionImages[0].url,
-      archiveName: sessionImages[0].archiveName
-    } : 'No session images');
-
-    // Validate that extracted files actually exist
-    for (const img of extractedImages) {
-      try {
-        await fs.access(img.path);
-        console.log(`Debug: File exists: ${img.path}`);
-      } catch (error) {
-        console.error(`Debug: File does not exist: ${img.path}`, error.message);
-      }
-    }
+    const archiveStat = await fs.stat(libraryArchivePath);
 
     // Add to library database
     database.archives[archiveId] = {
       id: archiveId,
-      sourceUrl: `file://${filePath}`, // Store original file path
+      sourceUrl: normalizeFileUrl(filePath), // Store original file path
       libraryPath: libraryPath,
       archiveFileName: archiveFileName,
       archiveSize: archiveStat.size, // Only archive size counts toward library limit
@@ -427,6 +403,7 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
     const result = { 
       images: sessionImages, 
       archiveId,
+      libraryArchivePath,
       addedToLibrary: true,
       wasCopied: shouldCopy
     };
@@ -541,20 +518,17 @@ async function loadLocalArchiveFromData(fileData, librarySizeGB) {
 
   try {
     // Write the data to a temporary file
-    const buffer = Buffer.from(data);
+    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
     await fs.writeFile(tempFilePath, buffer);
 
-    // Use the existing loadLocalArchive function
-    const result = await loadLocalArchive(tempFilePath, librarySizeGB, { copyToLibrary });
-
-    // Clean up temp file
-    await fs.unlink(tempFilePath).catch(() => {}); // Ignore cleanup errors
+    // Use the existing loadLocalArchive function with a deterministic ID
+    const contentHash = createHash('md5').update(buffer).digest('hex');
+    const result = await loadLocalArchive(tempFilePath, librarySizeGB, { copyToLibrary, archiveId: contentHash });
 
     return result;
-  } catch (error) {
-    // Clean up temp file on error
+  } finally {
+    // Clean up temp file, ignoring errors if it doesn't exist.
     await fs.unlink(tempFilePath).catch(() => {});
-    throw error;
   }
 }
 

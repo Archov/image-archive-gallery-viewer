@@ -40,20 +40,15 @@ async function manageLibrary(maxSizeBytes) {
       const archiveSize = archive.archiveSize || 0;
       
       // Remove archive from library
-      const libraryArchivePath = path.join(archive.libraryPath, archive.archiveFileName);
-      
-      // Delete archive file and directory
-      if (await fileExists(libraryArchivePath)) {
-        await fs.unlink(libraryArchivePath);
-        console.log(`Deleted archive: ${libraryArchivePath}`);
-      }
-      
-      // Clean up empty library directory
-      try {
-        await fs.rmdir(archive.libraryPath);
-        console.log(`Removed library directory: ${archive.libraryPath}`);
-      } catch (dirError) {
-        // Directory might not be empty or might not exist, that's ok
+      if (!archive.libraryPath || !archive.archiveFileName) {
+        console.warn(`Archive ${archive.id} missing libraryPath/archiveFileName – skipping file removal`);
+      } else {
+        const libraryArchivePath = path.join(archive.libraryPath, archive.archiveFileName);
+        if (await fileExists(libraryArchivePath)) {
+          await fs.rm(libraryArchivePath, { force: true });
+          console.log(`Deleted archive: ${libraryArchivePath}`);
+        }
+        await fs.rm(archive.libraryPath, { recursive: true, force: true }).catch(() => {});
       }
 
       // Remove from database
@@ -126,19 +121,15 @@ async function clearLibrary() {
   for (const archive of archivesToClear) {
     try {
       // Delete archive file and directory
-      const libraryArchivePath = path.join(archive.libraryPath, archive.archiveFileName);
-      
-      if (await fileExists(libraryArchivePath)) {
-        await fs.unlink(libraryArchivePath);
-        console.log(`Deleted archive: ${libraryArchivePath}`);
-      }
-      
-      // Clean up library directory
-      try {
-        await fs.rmdir(archive.libraryPath);
-        console.log(`Removed library directory: ${archive.libraryPath}`);
-      } catch (dirError) {
-        // Directory might not be empty, that's ok
+      if (!archive.libraryPath || !archive.archiveFileName) {
+        console.warn(`Archive ${archive.id} missing libraryPath/archiveFileName – skipping file removal`);
+      } else {
+        const libraryArchivePath = path.join(archive.libraryPath, archive.archiveFileName);
+        if (await fileExists(libraryArchivePath)) {
+          await fs.rm(libraryArchivePath, { force: true });
+          console.log(`Deleted archive: ${libraryArchivePath}`);
+        }
+        await fs.rm(archive.libraryPath, { recursive: true, force: true }).catch(() => {});
       }
 
       // Remove from database

@@ -142,7 +142,11 @@ async function loadSettings() {
 
     state.settings = { ...state.settings, ...settings };
 
-    elements.librarySizeSelect.value = state.settings.librarySize;
+    const size =
+      Number.isFinite(state.settings.librarySize) ? state.settings.librarySize :
+      Number.isFinite(state.settings.cacheSize) ? state.settings.cacheSize : 2;
+    state.settings.librarySize = size;
+    elements.librarySizeSelect.value = String(size);
 
     elements.autoLoadFromClipboardSelect.value = String(state.settings.autoLoadFromClipboard);
 

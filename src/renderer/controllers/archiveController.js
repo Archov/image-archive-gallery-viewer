@@ -96,24 +96,27 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       // Read the file data as an ArrayBuffer
       const fileData = await readFileAsArrayBuffer(file);
       
-      ui.updateText('Extracting Archive', 'Processing archive data...');
+      ui.showLoading('Extracting Archive', 'Processing archive data...');
       
       const result = await electron.loadLocalArchiveFromData({
         name: file.name,
-        data: Array.from(new Uint8Array(fileData)), // Convert to array for IPC
+        data: new Uint8Array(fileData), // Send as TypedArray to avoid massive copies
         size: file.size,
         copyToLibrary: !dialogResult.moveToLibrary
       }, state.settings.librarySize);
       
       let images;
+      let archiveIdFromResult = null;
       if (result.needsUserChoice) {
         // This shouldn't happen since we already showed the dialog
         throw new Error('Unexpected user choice needed');
       } else if (result.alreadyInLibrary) {
         images = result.images;
+        archiveIdFromResult = result.archiveId || null;
         ui.updateStatus('Archive was already in library', false);
       } else {
         images = result.images;
+        archiveIdFromResult = result.archiveId || null;
         ui.updateStatus(result.wasCopied ? 'Archive copied to library' : 'Archive moved to library', false);
       }
 
@@ -123,7 +126,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
 
       gallery.displayGallery(images, displayName);
 
-      const archiveId = getArchiveIdFromUrl(`file://${file.name}`);
+      const archiveId = archiveIdFromResult || getArchiveIdFromUrl(`file://${displayName}`);
       images.forEach(img => {
         img.archiveName = displayName;
         img.originalArchiveId = archiveId;
@@ -133,10 +136,11 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       state.loadedArchiveIds.add(archiveId);
       state.currentArchiveId = archiveId;
 
-      await addToHistory(displayName, `file://${file.name}`, images.length);
+      const historyUrl = result.libraryArchivePath ? `file://${result.libraryArchivePath}` : `archive://${archiveId}`;
+      await addToHistory(displayName, historyUrl, images.length);
 
       if (historyController) {
-        await historyController.refreshHistory({ highlightUrl: `file://${file.name}` });
+        await historyController.refreshHistory({ highlightUrl: historyUrl });
       }
 
       await updateLibraryInfo();
@@ -177,8 +181,11 @@ export function createArchiveController({ state, elements, ui, electron, gallery
   async function updateLibraryInfo() {
     try {
       const libraryInfo = await electron.getLibraryInfo();
-      const used = libraryInfo.totalArchiveSize;
-      const limit = state.settings.librarySize * 1024 * 1024 * 1024;
+      const used = Number(libraryInfo.totalArchiveSize) || 0;
+      const libSizeGB = Number.isFinite(Number(state.settings.librarySize))
+        ? Number(state.settings.librarySize)
+        : Number(state.settings.cacheSize ?? 2);
+      const limit = libSizeGB * 1024 * 1024 * 1024;
       const usedPercentage = limit > 0 ? (used / limit) * 100 : 0;
 
       if (elements.libraryUsed) {

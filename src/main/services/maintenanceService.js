@@ -1,8 +1,6 @@
 const os = require('os');
 const path = require('path');
 const fs = require('fs').promises;
-const path = require('path');
-const os = require('os');
 
 /**
  * Cleans up old temp extraction directories.
@@ -11,6 +9,7 @@ const os = require('os');
 async function cleanupExtractedImages(maxAgeMinutes = 30) {
   const tempBaseDir = path.join(os.tmpdir(), 'kemono-gallery');
   const maxAge = maxAgeMinutes * 60 * 1000;
+  const now = Date.now();
 
   try {
     // Check if the temp base directory exists
