@@ -142,7 +142,7 @@ async function loadSettings() {
 
     state.settings = { ...state.settings, ...settings };
 
-    elements.cacheSizeSelect.value = state.settings.cacheSize;
+    elements.librarySizeSelect.value = state.settings.librarySize;
 
     elements.autoLoadFromClipboardSelect.value = String(state.settings.autoLoadFromClipboard);
 
@@ -166,7 +166,7 @@ async function loadSettings() {
 
 async function saveSettings() {
 
-  state.settings.cacheSize = parseFloat(elements.cacheSizeSelect.value);
+  state.settings.librarySize = parseFloat(elements.librarySizeSelect.value);
 
   state.settings.autoLoadFromClipboard = elements.autoLoadFromClipboardSelect.value === 'true';
 
@@ -757,7 +757,7 @@ async function clearLibrary() {
 
   try {
 
-    await electron.clearCache();
+    await electron.clearLibrary();
 
     await archive.updateLibraryInfo();
 

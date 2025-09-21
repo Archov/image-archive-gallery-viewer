@@ -2,7 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const {
   appDataDir,
-  cacheDir,
+  libraryDir,
   backupDir,
   databaseFile,
   historyFile,
@@ -19,7 +19,7 @@ function getDatabase() {
 async function ensureDirectories() {
   await Promise.all([
     fs.mkdir(appDataDir, { recursive: true }),
-    fs.mkdir(cacheDir, { recursive: true }),
+    fs.mkdir(libraryDir, { recursive: true }),
     fs.mkdir(backupDir, { recursive: true })
   ]);
 }

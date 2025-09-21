@@ -2,14 +2,14 @@ const path = require('path');
 const os = require('os');
 
 const appDataDir = path.join(os.homedir(), '.archive-image-gallery');
-const cacheDir = path.join(appDataDir, 'cache');
+const libraryDir = path.join(appDataDir, 'library');
 const backupDir = path.join(appDataDir, 'backups');
 const databaseFile = path.join(appDataDir, 'database.json');
 const historyFile = path.join(appDataDir, 'history.json');
 const settingsFile = path.join(appDataDir, 'settings.json');
 
 const DEFAULT_SETTINGS = {
-  cacheSize: 2,
+  librarySize: 2,
   autoLoadFromClipboard: true,
   maxHistoryItems: 100,
   allowFullscreenUpscaling: false,
@@ -25,7 +25,7 @@ const DATABASE_TEMPLATE = {
 
 module.exports = {
   appDataDir,
-  cacheDir,
+  libraryDir,
   backupDir,
   databaseFile,
   historyFile,

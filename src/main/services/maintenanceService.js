@@ -1,30 +1,33 @@
+const os = require('os');
+const path = require('path');
 const fs = require('fs').promises;
-const { getDatabase } = require('./databaseService');
 
 async function cleanupExtractedImages(maxAgeMinutes = 30) {
-  const database = getDatabase();
-  const archives = Object.values(database.archives);
+  const tempDir = os.tmpdir();
   const maxAge = maxAgeMinutes * 60 * 1000;
-  const now = Date.now();
 
-  for (const archive of archives) {
-    if (!archive.extractedImages) continue;
+  try {
+    // Clean up old temp directories used by the app
+    const items = await fs.readdir(tempDir);
 
-    for (const imageMeta of archive.extractedImages) {
-      const image = database.images[imageMeta.id];
-      if (!image) continue;
+    for (const item of items) {
+      const itemPath = path.join(tempDir, item);
 
-      try {
-        const stat = await fs.stat(image.path);
-        const age = now - stat.mtime.getTime();
+      if (item.startsWith('archive-image-') || item.startsWith('archive-metadata-')) {
+        try {
+          const stat = await fs.stat(itemPath);
 
-        if (age > maxAge) {
-          await fs.unlink(image.path);
+          if (stat.isDirectory() && Date.now() - stat.mtime.getTime() > maxAge) {
+            await fs.rm(itemPath, { recursive: true, force: true });
+            console.log(`Cleaned up old temp directory: ${itemPath}`);
+          }
+        } catch (error) {
+          // Directory does not exist or cannot be accessed; ignore
         }
-      } catch (error) {
-        // File does not exist or cannot be accessed; ignore
       }
     }
+  } catch (error) {
+    console.error('Failed to cleanup temp directories:', error);
   }
 }
 

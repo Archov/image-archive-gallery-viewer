@@ -1,5 +1,6 @@
-const { fileURLToPath } = require('url');
 const fs = require('fs').promises;
+const { fileURLToPath } = require('url');
+const { dialog } = require('electron');
 const path = require('path');
 const { createHash } = require('crypto');
 const os = require('os');
@@ -15,10 +16,20 @@ const {
 const { downloadFile } = require('./downloadService');
 const { manageLibrary, clearLibrary, getLibraryUsage } = require('./libraryService');
 const { getDatabase, saveDatabase } = require('./databaseService');
-const { cacheDir } = require('../config');
+const { libraryDir } = require('../config');
 
-function normalizeFileUrl(filePath) {
-  return `file://${filePath.replace(/\\/g, '/')}`;
+// Helper function for archive extraction
+async function extractArchive(extension, archivePath, extractPath) {
+  switch (extension.toLowerCase()) {
+    case '.zip':
+      return extractZip(archivePath, extractPath);
+    case '.rar':
+      return extractRar(archivePath, extractPath);
+    case '.7z':
+      return extract7z(archivePath, extractPath);
+    default:
+      throw new Error('Unsupported archive format');
+  }
 }
 
 
@@ -78,10 +89,8 @@ function getArchiveExtension(url) {
   }
 }
 
-
-async function loadArchiveFromUrl(url, cacheSizeLimitGB, { onProgress } = {}) {
+async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) {
   const archiveId = createHash('md5').update(url).digest('hex');
-  const cachePath = path.join(cacheDir, archiveId);
   const database = getDatabase();
 
   try {
@@ -90,130 +99,42 @@ async function loadArchiveFromUrl(url, cacheSizeLimitGB, { onProgress } = {}) {
       archive.lastAccessed = new Date().toISOString();
       await saveDatabase();
 
-      let databaseDirty = false;
-
-      let archivePath = archive.archivePath;
-      if (!archivePath || !(await fileExists(archivePath))) {
-        if (archive.url && /^https?:/i.test(archive.url)) {
-          const archiveExtFromUrl = getArchiveExtension(archive.url);
-          archivePath = path.join(cacheDir, archiveId, "archive" + archiveExtFromUrl);
-          await fs.mkdir(path.dirname(archivePath), { recursive: true });
-          await downloadFile(archive.url, archivePath);
-          archive.archivePath = archivePath;
-          databaseDirty = true;
-        } else {
-          throw new Error("Archive file not available for cached load");
-        }
-      }
-      const archiveExt = path.extname(archivePath).toLowerCase() || getArchiveExtension(archive.url || url);
-
-      const sessionDir = await createSessionExtractDir(archiveId);
-      const storedImages = Object.values(database.images).filter(img => img.archiveId === archiveId);
-      const extractedImages = await extractArchive(archiveExt, archivePath, sessionDir);
-
-      const lookup = buildExtractedLookup(extractedImages);
-      const archiveImagesById = new Map();
-      if (!Array.isArray(archive.extractedImages)) {
-        archive.extractedImages = [];
-      }
-      for (const meta of archive.extractedImages) {
-        archiveImagesById.set(meta.id, meta);
-      }
-
-      const sessionImages = [];
-      const unmatchedImages = [];
-
-      for (const imageMeta of storedImages) {
-        const match = findExtractedMatch(imageMeta, lookup);
-        if (match) {
-          const imageUrl = match.url || normalizeFileUrl(match.path);
-          sessionImages.push({
-            id: imageMeta.id,
-            name: imageMeta.name,
-            url: imageUrl,
-            starred: Boolean(imageMeta.starred),
-            archiveName: archive.displayName || archive.url || "Archive"
-          });
-
-          const imageRecord = database.images[imageMeta.id];
-          if (imageRecord) {
-            const normalizedRelative = (match.relativePath || match.originalName || imageRecord.relativePath || imageRecord.originalName || "").replace(/\\/g, "/");
-            imageRecord.relativePath = normalizedRelative;
-            databaseDirty = true;
-          }
-
-          const archiveMeta = archiveImagesById.get(imageMeta.id);
-          if (archiveMeta) {
-            const archiveRelative = (match.relativePath || match.originalName || '').replace(/\\/g, '/');
-            if (archiveRelative && archiveMeta.relativePath !== archiveRelative) {
-              archiveMeta.relativePath = archiveRelative;
-              databaseDirty = true;
-            }
-          }
-        } else {
-          unmatchedImages.push(imageMeta);
-        }
-      }
-
-      if (unmatchedImages.length > 0) {
-        for (const imageMeta of unmatchedImages) {
-          const { filePath, entryName } = buildSessionOutputPath(sessionDir, imageMeta);
-          try {
-            await extractEntryToFile(archivePath, archiveExt, entryName, filePath);
-            sessionImages.push({
-              id: imageMeta.id,
-              name: imageMeta.name,
-              url: normalizeFileUrl(filePath),
-              starred: Boolean(imageMeta.starred),
-              archiveName: archive.displayName || archive.url || "Archive"
-            });
-          } catch (error) {
-            console.error("Failed to restore image " + imageMeta.name + ":", error);
-          }
-        }
-      }
-
-      if (databaseDirty) {
+      // Check if archive file exists
+      if (!archive.archivePath || !(await fileExists(archive.archivePath))) {
+        console.warn(`Archive file not found at ${archive.archivePath}, re-downloading...`);
+        // Remove invalid archive entry and let it fall through to re-download
+        delete database.archives[archiveId];
         await saveDatabase();
-      }
+        // Continue to re-download the archive
+      } else {
+        const sessionDir = await createSessionExtractDir(archiveId);
+        const extractedImages = await extractArchiveToTemp(archive.archivePath, sessionDir);
 
-      return { images: sessionImages, archiveId };
+        const sessionImages = extractedImages.map(img => ({
+          id: img.id,
+          name: img.name,
+          url: img.url,
+          starred: Boolean(img.starred),
+          archiveName: archive.displayName || archive.url || "Archive"
+        }));
+
+        return { images: sessionImages, archiveId };
+      }
     }
 
-    await fs.mkdir(cachePath, { recursive: true });
-
     const archiveExt = getArchiveExtension(url);
-    const archivePath = path.join(cachePath, `archive${archiveExt}`);
+    const archivePath = path.join(libraryDir, `${archiveId}${archiveExt}`);
+    await fs.mkdir(libraryDir, { recursive: true });
 
     await downloadFile(url, archivePath, onProgress);
-
     const archiveStat = await fs.stat(archivePath);
     console.log(`Remote archive loaded: ${archivePath}, size=${archiveStat.size} bytes (${(archiveStat.size / (1024 * 1024)).toFixed(2)} MB)`);
 
-    const sessionDir = await createSessionExtractDir(archiveId);
-    const extractedImages = await extractArchive(archiveExt, archivePath, sessionDir);
-
-    const metadata = extractedImages.map(img => ({
-      id: img.id,
-      name: img.name,
-      originalName: (img.originalName || img.name || '').replace(/\\/g, '/'),
-      relativePath: (img.relativePath || img.originalName || img.name || '').replace(/\\/g, '/'),
-      size: img.size,
-      starred: Boolean(img.starred)
-    }));
-
-    const sessionImages = extractedImages.map(img => ({
-      id: img.id,
-      name: img.name,
-      url: img.url,
-      starred: Boolean(img.starred),
-      archiveName: path.basename(url)
-    }));
+    const metadata = await getArchiveMetadata(archivePath);
 
     database.archives[archiveId] = {
       id: archiveId,
       url,
-      cachePath,
       archivePath,
       size: archiveStat.size,
       lastAccessed: new Date().toISOString(),
@@ -236,51 +157,94 @@ async function loadArchiveFromUrl(url, cacheSizeLimitGB, { onProgress } = {}) {
 
     await saveDatabase();
 
-    const librarySizeBytes = (cacheSizeLimitGB || 2) * 1024 * 1024 * 1024;
+    const librarySizeBytes = (librarySizeLimitGB || 2) * 1024 * 1024 * 1024;
     await manageLibrary(librarySizeBytes);
 
-    return { images: sessionImages, archiveId };
-  } catch (error) {
-    await cleanupLibraryDirectory(cachePath);
-    throw error;
-  }
-}
-
-
-async function loadLocalArchive(filePath, cacheSizeGB) {
-  const archiveId = createHash('md5').update(filePath).digest('hex');
-  const cachePath = path.join(cacheDir, archiveId);
-  const database = getDatabase();
-
-  try {
-    const archiveStat = await fs.stat(filePath);
     const sessionDir = await createSessionExtractDir(archiveId);
-    const ext = path.extname(filePath).toLowerCase();
-
-    const extractedImages = await extractArchive(ext, filePath, sessionDir);
-
-    const metadata = extractedImages.map(img => ({
-      id: img.id,
-      name: img.name,
-      originalName: (img.originalName || img.name || '').replace(/\\/g, '/'),
-      relativePath: (img.relativePath || img.originalName || img.name || '').replace(/\\/g, '/'),
-      size: img.size,
-      starred: Boolean(img.starred)
-    }));
+    const extractedImages = await extractArchiveToTemp(archivePath, sessionDir);
 
     const sessionImages = extractedImages.map(img => ({
       id: img.id,
       name: img.name,
       url: img.url,
       starred: Boolean(img.starred),
-      archiveName: path.basename(filePath)
+      archiveName: path.basename(url)
     }));
+
+    return { images: sessionImages, archiveId };
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function loadLocalArchive(filePath, librarySizeGB) {
+  const archiveId = createHash('md5').update(filePath).digest('hex');
+  const database = getDatabase();
+
+  try {
+    if (database.archives[archiveId]) {
+      const archive = database.archives[archiveId];
+      archive.lastAccessed = new Date().toISOString();
+      await saveDatabase();
+
+      // Check if archive file exists
+      if (!archive.archivePath || !(await fileExists(archive.archivePath))) {
+        console.warn(`Archive file not found at ${archive.archivePath}, re-processing...`);
+        // Remove invalid archive entry and let it fall through to re-process
+        delete database.archives[archiveId];
+        await saveDatabase();
+        // Continue to re-process the local archive
+      } else {
+        const sessionDir = await createSessionExtractDir(archiveId);
+        const extractedImages = await extractArchiveToTemp(archive.archivePath, sessionDir);
+
+        const sessionImages = extractedImages.map(img => ({
+          id: img.id,
+          name: img.name,
+          url: img.url,
+          starred: Boolean(img.starred),
+          archiveName: archive.displayName || path.basename(filePath)
+        }));
+
+        return sessionImages;
+      }
+    }
+
+    const choice = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Move to Library', 'Copy to Library', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      title: 'Add Archive to Library',
+      message: `Do you want to move or copy "${path.basename(filePath)}" to the library?`
+    });
+
+    if (choice.response === 2) { // Cancel
+      throw new Error('User cancelled archive import');
+    }
+
+    const shouldMove = choice.response === 0;
+
+    const archiveExt = path.extname(filePath);
+    const archivePath = path.join(libraryDir, `${archiveId}${archiveExt}`);
+    await fs.mkdir(libraryDir, { recursive: true });
+
+    if (shouldMove) {
+      await fs.rename(filePath, archivePath);
+      console.log(`Local archive moved to library: ${archivePath}`);
+    } else {
+      await fs.copyFile(filePath, archivePath);
+      console.log(`Local archive copied to library: ${archivePath}`);
+    }
+
+    const archiveStat = await fs.stat(archivePath);
+
+    const metadata = await getArchiveMetadata(archivePath);
 
     database.archives[archiveId] = {
       id: archiveId,
       url: `file://${filePath}`,
-      cachePath,
-      archivePath: filePath,
+      archivePath,
       size: archiveStat.size,
       lastAccessed: new Date().toISOString(),
       starred: false,
@@ -302,16 +266,25 @@ async function loadLocalArchive(filePath, cacheSizeGB) {
 
     await saveDatabase();
 
-    const cacheSizeBytes = (cacheSizeGB || database.settings.librarySize || 2) * 1024 * 1024 * 1024;
-    await manageLibrary(cacheSizeBytes);
+    const sessionDir = await createSessionExtractDir(archiveId);
+    const extractedImages = await extractArchiveToTemp(archivePath, sessionDir);
+
+    const sessionImages = extractedImages.map(img => ({
+      id: img.id,
+      name: img.name,
+      url: img.url,
+      starred: Boolean(img.starred),
+      archiveName: path.basename(filePath)
+    }));
+
+    const librarySizeBytes = (librarySizeGB || 2) * 1024 * 1024 * 1024;
+    await manageLibrary(librarySizeBytes);
 
     return sessionImages;
   } catch (error) {
-    await cleanupLibraryDirectory(cachePath);
     throw error;
   }
 }
-
 
 async function extractImage(archiveId, imageId) {
   const database = getDatabase();
@@ -326,8 +299,8 @@ async function extractImage(archiveId, imageId) {
   if (!archivePath || !(await fileExists(archivePath))) {
     if (archive.url && /^https?:/i.test(archive.url)) {
       const archiveExt = getArchiveExtension(archive.url);
-      archivePath = path.join(cacheDir, archiveId, `archive${archiveExt}`);
-      await fs.mkdir(path.dirname(archivePath), { recursive: true });
+      archivePath = path.join(libraryDir, `${archiveId}${archiveExt}`);
+      await fs.mkdir(libraryDir, { recursive: true });
       await downloadFile(archive.url, archivePath);
       archive.archivePath = archivePath;
       await saveDatabase();
@@ -367,17 +340,29 @@ async function toggleImageStar(archiveId, imageId) {
   return { starred: image.starred };
 }
 
-async function extractArchive(extension, archivePath, extractPath) {
-  switch (extension.toLowerCase()) {
-    case '.zip':
-      return extractZip(archivePath, extractPath);
-    case '.rar':
-      return extractRar(archivePath, extractPath);
-    case '.7z':
-      return extract7z(archivePath, extractPath);
-    default:
-      throw new Error('Unsupported archive format');
-  }
+async function extractArchiveToTemp(archivePath, extractPath) {
+  const ext = path.extname(archivePath).toLowerCase();
+  return await extractArchive(ext, archivePath, extractPath);
+}
+
+async function getArchiveMetadata(archivePath) {
+  const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-metadata-'));
+  const ext = path.extname(archivePath).toLowerCase();
+  const extractedImages = await extractArchive(ext, archivePath, sessionDir);
+
+  const metadata = extractedImages.map(img => ({
+    id: img.id,
+    name: img.name,
+    originalName: (img.originalName || img.name || '').replace(/\\/g, '/'),
+    relativePath: (img.relativePath || img.originalName || img.name || '').replace(/\\/g, '/'),
+    size: img.size,
+    starred: Boolean(img.starred)
+  }));
+
+  // Cleanup temp directory
+  await fs.rm(sessionDir, { recursive: true, force: true });
+
+  return metadata;
 }
 
 async function fileExists(targetPath) {

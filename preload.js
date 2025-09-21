@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Archive loading
-  loadArchive: (url, cacheSizeGB) => ipcRenderer.invoke('load-archive', url, cacheSizeGB),
+  loadArchive: (url, librarySizeGB) => ipcRenderer.invoke('load-archive', url, librarySizeGB),
   loadLocalArchive: (filePath) => ipcRenderer.invoke('load-local-archive', filePath),
   
   // Settings
@@ -15,9 +15,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleHistoryStar: (historyId) => ipcRenderer.invoke('toggle-history-star', historyId),
   clearHistory: () => ipcRenderer.invoke('clear-history'),
   
-  // Cache management
-  getCacheInfo: () => ipcRenderer.invoke('get-cache-info'),
-  clearCache: () => ipcRenderer.invoke('clear-cache'),
+  // Library management
+  getLibraryInfo: () => ipcRenderer.invoke('get-library-info'),
+  clearLibrary: () => ipcRenderer.invoke('clear-library'),
   
   // Backup management
   listBackups: () => ipcRenderer.invoke('list-backups'),

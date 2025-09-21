@@ -58,9 +58,7 @@ async function manageLibrary(maxSizeBytes) {
     try {
       if (archive.archivePath && await exists(archive.archivePath)) {
         await fs.unlink(archive.archivePath);
-      }
-      if (archive.cachePath) {
-        await removeDirectory(archive.cachePath);
+        console.log(`Deleted archive file: ${archive.archivePath}`);
       }
 
       delete database.archives[archive.id];
@@ -91,10 +89,6 @@ async function clearLibrary() {
       if (archive.archivePath && await exists(archive.archivePath)) {
         await fs.unlink(archive.archivePath);
         console.log(`Deleted archive file: ${archive.archivePath}`);
-      }
-      if (archive.cachePath) {
-        await removeDirectory(archive.cachePath);
-        console.log(`Deleted library directory: ${archive.cachePath}`);
       }
 
       delete database.archives[archive.id];

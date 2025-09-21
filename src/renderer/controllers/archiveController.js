@@ -136,7 +136,7 @@ export function createArchiveController({ state, elements, ui, electron, gallery
 
   async function updateLibraryInfo() {
     try {
-      const libraryInfo = await electron.getCacheInfo();
+      const libraryInfo = await electron.getLibraryInfo();
       const used = libraryInfo.totalSize;
       const limit = state.settings.librarySize * 1024 * 1024 * 1024;
       const usedPercentage = limit > 0 ? (used / limit) * 100 : 0;

@@ -2,11 +2,11 @@ import { debounce } from '../utils.js';
 
 export function createGalleryController({ state, elements, ui, electron }) {
   let loadAdjacentArchive = null;
-  let refreshCacheInfo = null;
+  let refreshLibraryInfo = null;
 
-  function setArchiveIntegration({ loadAdjacent, updateCacheInfo }) {
+  function setArchiveIntegration({ loadAdjacent, updateLibraryInfo }) {
     loadAdjacentArchive = loadAdjacent;
-    refreshCacheInfo = updateCacheInfo;
+    refreshLibraryInfo = updateLibraryInfo;
   }
 
   function getImageArchiveId(image) {
@@ -128,8 +128,8 @@ export function createGalleryController({ state, elements, ui, electron }) {
         image.starred = result.starred;
       }
 
-      if (refreshCacheInfo) {
-        await refreshCacheInfo();
+      if (refreshLibraryInfo) {
+        await refreshLibraryInfo();
       }
     } catch (error) {
       console.error('Failed to toggle image star:', error);

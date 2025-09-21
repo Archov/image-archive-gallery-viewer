@@ -27,7 +27,7 @@ const {
 } = require('../services/databaseService');
 
 function registerHandlers(ipcMain, { getMainWindow }) {
-  ipcMain.handle('load-archive', async (event, url, cacheSizeLimitGB) => {
+  ipcMain.handle('load-archive', async (event, url, librarySizeLimitGB) => {
     const mainWindow = getMainWindow();
     const archiveId = createHash('md5').update(url).digest('hex');
 
@@ -42,7 +42,7 @@ function registerHandlers(ipcMain, { getMainWindow }) {
         }
       : null;
 
-    return loadArchiveFromUrl(url, cacheSizeLimitGB, { onProgress });
+    return loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress });
   });
 
   ipcMain.handle('load-local-archive', async (event, filePath) => {
@@ -81,11 +81,11 @@ function registerHandlers(ipcMain, { getMainWindow }) {
     return extractImage(archiveId, imageId);
   });
 
-  ipcMain.handle('clear-cache', async () => {
+  ipcMain.handle('clear-library', async () => {
     await clearLibrary();
   });
 
-  ipcMain.handle('get-cache-info', async () => {
+  ipcMain.handle('get-library-info', async () => {
     return getLibraryUsage();
   });
 
