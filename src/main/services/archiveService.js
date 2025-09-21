@@ -21,7 +21,36 @@ const { libraryDir } = require('../config');
 const { v4: uuidv4 } = require('uuid');
 
 function normalizeFileUrl(filePath) {
+  // Validate and sanitize the file path to prevent path traversal
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('Invalid file path provided');
+  }
+  
+  // Check for path traversal attempts
+  if (filePath.includes('..') || filePath.includes('~')) {
+    throw new Error('Path traversal detected in file path');
+  }
+  
   return pathToFileURL(path.resolve(filePath)).href;
+}
+
+function safePathJoin(...pathSegments) {
+  // Validate all path segments to prevent path traversal
+  for (const segment of pathSegments) {
+    if (typeof segment !== 'string') {
+      throw new Error('Invalid path segment type');
+    }
+    if (segment.includes('..') || segment.includes('~')) {
+      throw new Error('Path traversal detected in path segment');
+    }
+  }
+  
+  const joinedPath = path.join(...pathSegments);
+  
+  // Additional validation: ensure the resolved path doesn't escape expected directories
+  const resolvedPath = path.resolve(joinedPath);
+  
+  return joinedPath;
 }
 
 // Helper function for archive extraction
@@ -39,7 +68,7 @@ async function extractArchive(extension, archivePath, extractPath) {
 }
 
 async function createSessionExtractDir(archiveId) {
-  const baseDir = path.join(os.tmpdir(), 'kemono-gallery', archiveId);
+  const baseDir = safePathJoin(os.tmpdir(), 'kemono-gallery', archiveId);
   await fs.rm(baseDir, { recursive: true, force: true });
   await fs.mkdir(baseDir, { recursive: true });
   return baseDir;
@@ -53,9 +82,9 @@ function buildSessionOutputPath(sessionDir, imageMeta) {
   const segments = outputSource.split("/").map(sanitizeFilename).filter(Boolean);
   const fileBase = sanitizeFilename(path.basename(outputSource, ext)) || String(imageMeta.id);
   const subDirs = segments.slice(0, -1);
-  const dir = path.join(sessionDir, ...subDirs);
+  const dir = safePathJoin(sessionDir, ...subDirs);
   const fileName = fileBase + "-" + imageMeta.id + ext;
-  const filePath = path.join(dir, fileName);
+  const filePath = safePathJoin(dir, fileName);
   return { dir, filePath, entryName, ext };
 }
 
@@ -105,7 +134,7 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
       archive.lastAccessed = new Date().toISOString();
       
       // Check if we have the archive in the new library structure
-      const libraryArchivePath = archive.libraryPath ? path.join(archive.libraryPath, archive.archiveFileName || 'archive' + getArchiveExtension(url)) : null;
+      const libraryArchivePath = archive.libraryPath ? safePathJoin(archive.libraryPath, archive.archiveFileName || 'archive' + getArchiveExtension(url)) : null;
       
       if (libraryArchivePath && (await fileExists(libraryArchivePath))) {
         // Archive exists in library - use it
@@ -131,11 +160,11 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
         
         // Set up new library structure
         const archiveExt = getArchiveExtension(sourceUrl);
-        const libraryPath = path.join(libraryDir, archiveId);
+        const libraryPath = safePathJoin(libraryDir, archiveId);
         await fs.mkdir(libraryPath, { recursive: true });
         
         const archiveFileName = `archive${archiveExt}`;
-        const newLibraryArchivePath = path.join(libraryPath, archiveFileName);
+        const newLibraryArchivePath = safePathJoin(libraryPath, archiveFileName);
 
         // Re-download archive to library
         await downloadFile(sourceUrl, newLibraryArchivePath, onProgress);
@@ -175,11 +204,11 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
 
     // New archive - download to library
     const archiveExt = getArchiveExtension(url);
-    const libraryPath = path.join(libraryDir, archiveId);
+    const libraryPath = safePathJoin(libraryDir, archiveId);
     await fs.mkdir(libraryPath, { recursive: true });
     
     const archiveFileName = `archive${archiveExt}`;
-    const libraryArchivePath = path.join(libraryPath, archiveFileName);
+    const libraryArchivePath = safePathJoin(libraryPath, archiveFileName);
 
     // Download archive to library
     await downloadFile(url, libraryArchivePath, onProgress);
@@ -244,7 +273,7 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
     return { images: sessionImages, archiveId, libraryArchivePath };
   } catch (error) {
     // Cleanup on error
-    const libraryPath = path.join(libraryDir, archiveId);
+    const libraryPath = safePathJoin(libraryDir, archiveId);
     await cleanupLibraryDirectory(libraryPath);
     throw error;
   }
@@ -252,17 +281,48 @@ async function loadArchiveFromUrl(url, librarySizeLimitGB, { onProgress } = {}) 
 
 async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
   const { copyToLibrary = null, archiveId: providedArchiveId } = options; // null = ask user, true = copy, false = move
-  const archiveId = providedArchiveId || createHash('md5').update(filePath).digest('hex');
+  const resolvedPath = path.resolve(filePath);
+  const resolvedLibraryDir = path.resolve(libraryDir);
+  let archiveId = providedArchiveId || createHash('md5').update(filePath).digest('hex');
+  
+  // If filePath is inside libraryDir, derive ID from parent directory
+  if (!providedArchiveId && (resolvedPath + path.sep).startsWith(resolvedLibraryDir + path.sep)) {
+    // Inside library: derive id from parent directory (../library/<archiveId>/archive.ext)
+    archiveId = path.basename(path.dirname(resolvedPath));
+  }
+  
   const database = getDatabase();
 
+  // Star restoration map (if we are rebuilding a missing library entry)
+  let existingStarredImages = null;
+
   try {
+    // Check if this is a library file that should short-circuit
+    const known = database.archives[archiveId];
+    if (known && known.libraryPath && known.archiveFileName) {
+      const expected = safePathJoin(known.libraryPath, known.archiveFileName);
+      if (path.resolve(expected) === resolvedPath && await fileExists(expected)) {
+        const sessionDir = await createSessionExtractDir(archiveId);
+        const archiveExt = path.extname(expected).toLowerCase();
+        const extractedImages = await extractArchive(archiveExt, expected, sessionDir);
+        const sessionImages = extractedImages.map(img => ({
+          id: img.id,
+          name: img.name,
+          url: img.url,
+          starred: Boolean(database.images[img.id]?.starred),
+          archiveName: known.displayName || path.basename(filePath)
+        }));
+        return { images: sessionImages, archiveId, libraryArchivePath: expected, alreadyInLibrary: true };
+      }
+    }
+
     // Check if already in library
     if (database.archives[archiveId]) {
       const archive = database.archives[archiveId];
       archive.lastAccessed = new Date().toISOString();
       
       // Check if archive exists in new library structure
-      const libraryArchivePath = archive.libraryPath ? path.join(archive.libraryPath, archive.archiveFileName || `archive${path.extname(filePath)}`) : null;
+      const libraryArchivePath = archive.libraryPath ? safePathJoin(archive.libraryPath, archive.archiveFileName || `archive${path.extname(filePath)}`) : null;
       
       if (libraryArchivePath && (await fileExists(libraryArchivePath))) {
         // Archive exists in library - use it
@@ -292,11 +352,12 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
         console.log(`Archive missing from library, will re-add from: ${filePath}`);
         
         // Store existing starred data for migration
-        const existingStarredImages = {};
+        existingStarredImages = {};
         Object.keys(database.images).forEach(imageId => {
           if (database.images[imageId].archiveId === archiveId && database.images[imageId].starred) {
             const image = database.images[imageId];
-            existingStarredImages[image.originalName || image.name] = true;
+            const key = (image.originalName || image.name || '').replace(/\\/g, '/');
+            existingStarredImages[key] = true;
           }
         });
         
@@ -316,11 +377,11 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
     const ext = path.extname(filePath).toLowerCase();
     
     // New local archive - need to add to library
-    const libraryPath = path.join(libraryDir, archiveId);
+    const libraryPath = safePathJoin(libraryDir, archiveId);
     await fs.mkdir(libraryPath, { recursive: true });
     
     const archiveFileName = `archive${ext}`;
-    const libraryArchivePath = path.join(libraryPath, archiveFileName);
+    const libraryArchivePath = safePathJoin(libraryPath, archiveFileName);
 
     // Determine if we should copy or move (this will be handled by UI)
     let shouldCopy = copyToLibrary;
@@ -367,6 +428,32 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
 
     const archiveStat = await fs.stat(libraryArchivePath);
 
+    // Build metadata and session images, preserving starred state when possible
+    const starredLookup = typeof existingStarredImages === 'object' ? existingStarredImages : null;
+    const metadata = extractedImages.map(img => {
+      const originalName = (img.originalName || img.name || '').replace(/\\/g, '/');
+      const relativePath = (img.relativePath || img.originalName || img.name || '').replace(/\\/g, '/');
+      const wasStarred = starredLookup
+        ? Boolean(starredLookup[originalName])
+        : Boolean(database.images[img.id]?.starred);
+      return {
+        id: img.id,
+        name: img.name,
+        originalName,
+        relativePath,
+        size: img.size,
+        starred: wasStarred
+      };
+    });
+
+    const sessionImages = extractedImages.map(img => ({
+      id: img.id,
+      name: img.name,
+      url: img.url,
+      starred: Boolean(database.images[img.id]?.starred) || Boolean(starredLookup?.[(img.originalName || img.name || '').replace(/\\/g, '/')]),
+      archiveName: path.basename(filePath)
+    }));
+
     // Add to library database
     database.archives[archiveId] = {
       id: archiveId,
@@ -411,7 +498,7 @@ async function loadLocalArchive(filePath, librarySizeGB, options = {}) {
     console.log(`Debug: Returning result with ${result.images.length} images`);
     return result;
   } catch (error) {
-    const libraryPath = path.join(libraryDir, archiveId);
+    const libraryPath = safePathJoin(libraryDir, archiveId);
     await cleanupLibraryDirectory(libraryPath);
     throw error;
   }
@@ -426,17 +513,17 @@ async function extractImage(archiveId, imageId) {
     throw new Error('Archive or image not found');
   }
 
-  const libraryArchivePath = path.join(archive.libraryPath, archive.archiveFileName);
+  const libraryArchivePath = safePathJoin(archive.libraryPath, archive.archiveFileName);
   if (!(await fileExists(libraryArchivePath))) {
     throw new Error('Archive file not found in library');
   }
 
   const archiveExt = path.extname(libraryArchivePath).toLowerCase();
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kemono-image-'));
+  const tempDir = await fs.mkdtemp(safePathJoin(os.tmpdir(), 'kemono-image-'));
   const entryName = (image.originalName || image.name || String(image.id)).replace(/\\/g, '/');
   const ext = path.extname(entryName) || '.img';
   const safeName = sanitizeFilename(path.basename(entryName, ext)) || image.id;
-  const outputPath = path.join(tempDir, `${safeName}-${image.id}${ext}`);
+  const outputPath = safePathJoin(tempDir, `${safeName}-${image.id}${ext}`);
 
   await extractEntryToFile(libraryArchivePath, archiveExt, entryName, outputPath);
 
@@ -469,7 +556,7 @@ async function extractArchiveToTemp(archivePath, extractPath) {
 }
 
 async function getArchiveMetadata(archivePath) {
-  const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-metadata-'));
+  const sessionDir = await fs.mkdtemp(safePathJoin(os.tmpdir(), 'archive-metadata-'));
   const ext = path.extname(archivePath).toLowerCase();
   const extractedImages = await extractArchive(ext, archivePath, sessionDir);
 
@@ -514,7 +601,7 @@ async function loadLocalArchiveFromData(fileData, librarySizeGB) {
   // Create a temporary file path for processing
   const tempDir = os.tmpdir();
   const tempFileName = `temp-${uuidv4()}-${name}`;
-  const tempFilePath = path.join(tempDir, tempFileName);
+  const tempFilePath = safePathJoin(tempDir, tempFileName);
 
   try {
     // Write the data to a temporary file

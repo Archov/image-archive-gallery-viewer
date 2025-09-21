@@ -165,6 +165,16 @@ export function createArchiveController({ state, elements, ui, electron, gallery
     });
   }
 
+  function tryExtractLibraryArchiveId(fileUrl) {
+    try {
+      const p = decodeURIComponent(new URL(fileUrl).pathname).replace(/\\/g, '/');
+      const parts = p.split('/').filter(Boolean);
+      return parts.length >= 2 ? parts[parts.length - 2] : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function addToHistory(name, url, imageCount) {
     try {
       await electron.addToHistory({
@@ -314,7 +324,11 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       const newArchiveId = getArchiveIdFromUrl(adjacentItem.url);
 
       if (adjacentItem.url.startsWith('file://')) {
-        const result = await electron.loadLocalArchive(adjacentItem.url.replace('file://', ''), state.settings.librarySize, { copyToLibrary: true });
+        const result = await electron.loadLocalArchive(
+          adjacentItem.url.replace('file://', ''),
+          state.settings.librarySize,
+          { copyToLibrary: true, archiveId: tryExtractLibraryArchiveId(adjacentItem.url) }
+        );
         newImages = result.images || [];
       } else {
         const result = await electron.loadArchive(adjacentItem.url, state.settings.librarySize);
@@ -375,7 +389,11 @@ export function createArchiveController({ state, elements, ui, electron, gallery
       const archiveId = getArchiveIdFromUrl(item.url);
 
       if (item.url.startsWith('file://')) {
-        const result = await electron.loadLocalArchive(item.url.replace('file://', ''), state.settings.librarySize, { copyToLibrary: true });
+        const result = await electron.loadLocalArchive(
+          item.url.replace('file://', ''),
+          state.settings.librarySize,
+          { copyToLibrary: true, archiveId: tryExtractLibraryArchiveId(item.url) }
+        );
         images = result.images || [];
       } else {
         const result = await electron.loadArchive(item.url, state.settings.librarySize);
@@ -457,7 +475,11 @@ export function createArchiveController({ state, elements, ui, electron, gallery
 
     if (historyItem.url.startsWith('file://')) {
       try {
-        const result = await electron.loadLocalArchive(historyItem.url.replace('file://', ''), state.settings.librarySize, { copyToLibrary: true });
+        const result = await electron.loadLocalArchive(
+          historyItem.url.replace('file://', ''),
+          state.settings.librarySize,
+          { copyToLibrary: true, archiveId: tryExtractLibraryArchiveId(historyItem.url) }
+        );
         const images = result.images || [];
         const archiveId = getArchiveIdFromUrl(historyItem.url);
 

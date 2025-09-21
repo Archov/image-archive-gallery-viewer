@@ -20,7 +20,11 @@ async function manageLibrary(maxSizeBytes) {
   // Get all non-starred archives sorted by last accessed (oldest first)
   const archivesToConsider = Object.values(database.archives)
     .filter(archive => !archive.starred)
-    .sort((a, b) => new Date(a.lastAccessed) - new Date(b.lastAccessed));
+    .sort((a, b) => {
+      const ad = new Date(a.lastAccessed || a.dateAdded || 0).getTime();
+      const bd = new Date(b.lastAccessed || b.dateAdded || 0).getTime();
+      return ad - bd;
+    });
 
   if (archivesToConsider.length === 0) {
     console.log('No unstarred archives to remove');
@@ -178,10 +182,10 @@ async function getLibraryInfo() {
 
     const accessDate = new Date(archive.lastAccessed);
     if (!libraryStats.oldestAccess || accessDate < libraryStats.oldestAccess) {
-      libraryStats.oldestAccess = accessDate;
+      libraryStats.oldestAccess = accessDate.toISOString();
     }
     if (!libraryStats.newestAccess || accessDate > libraryStats.newestAccess) {
-      libraryStats.newestAccess = accessDate;
+      libraryStats.newestAccess = accessDate.toISOString();
     }
 
     libraryStats.archives.push({
@@ -197,7 +201,11 @@ async function getLibraryInfo() {
   }
 
   // Sort archives by last accessed (newest first)
-  libraryStats.archives.sort((a, b) => new Date(b.lastAccessed) - new Date(a.lastAccessed));
+  libraryStats.archives.sort((a, b) => {
+    const ad = new Date(a.lastAccessed || a.dateAdded || 0).getTime();
+    const bd = new Date(b.lastAccessed || b.dateAdded || 0).getTime();
+    return bd - ad;
+  });
 
   return libraryStats;
 }

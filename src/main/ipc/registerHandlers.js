@@ -22,7 +22,8 @@ const {
 } = require('../services/historyService');
 const {
   clearLibrary,
-  getLibraryUsage
+  getLibraryUsage,
+  getLibraryInfo
 } = require('../services/libraryService');
 const {
   listBackups,
@@ -121,7 +122,7 @@ function registerHandlers(ipcMain, { getMainWindow }) {
   });
 
   ipcMain.handle('get-library-info', async () => {
-    return getLibraryUsage();
+    return getLibraryInfo();
   });
 
   ipcMain.handle('list-backups', async () => {
