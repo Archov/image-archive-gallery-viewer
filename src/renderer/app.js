@@ -1,1071 +1,656 @@
-// Image Gallery Manager - Renderer Process Entry Point
-// This is a temporary bootstrap that will be replaced with a modern framework (React/Vue/Svelte)
-
-class ImageGalleryManager {
+// Image Gallery Manager - Core Functionality
+class ImageGallery {
     constructor() {
-        this.initialized = false;
-        this.currentView = 'loading';
+        this.images = [];
+        this.currentIndex = 0;
+        this.isFullscreen = false;
+        this.debugLogs = [];
+        this.fullscreenWheelHandler = null;
 
-        // Gallery state
-        this.galleryImages = []; // Array of loaded images
-        this.columnWidth = 300; // Default column width in pixels
-        this.columns = 4; // Default number of columns
-
-        this.init();
-    }
-
-    async init() {
-        try {
-            // Update loading status
-            window.loadingUtils.updateStatus('Initializing application...');
-
-            // Wait for electron API to be available
-            await this.waitForElectronAPI();
-
-            // Initialize database connection
-            window.loadingUtils.updateStatus('Connecting to database...');
-            await this.initializeDatabase();
-
-            // Load settings
-            window.loadingUtils.updateStatus('Loading settings...');
-            await this.loadSettings();
-
-            // Initialize UI components
-            window.loadingUtils.updateStatus('Setting up interface...');
-            await this.initializeUI();
-
-            // Mark as initialized
-            this.initialized = true;
-
-            // Hide loading screen and show main interface
-            window.loadingUtils.hide();
-
-            console.log('Image Gallery Manager initialized successfully');
-        } catch (error) {
-            console.error('Failed to initialize application:', error);
-            this.showError('Failed to initialize application: ' + error.message);
-        }
-    }
-
-    async waitForElectronAPI() {
-        return new Promise((resolve) => {
-            const checkAPI = () => {
-                if (window.electronAPI) {
-                    resolve();
-                } else {
-                    setTimeout(checkAPI, 10);
-                }
-            };
-            checkAPI();
-        });
-    }
-
-    async initializeDatabase() {
-        const result = await window.electronAPI.db.init();
-        if (!result.success) {
-            throw new Error('Database initialization failed: ' + result.error);
-        }
-    }
-
-    async loadSettings() {
-        const result = await window.electronAPI.settings.get();
-        if (result.success) {
-            this.settings = result.data;
-        } else {
-            console.warn('Failed to load settings, using defaults');
-            this.settings = {};
-        }
-    }
-
-    async initializeUI() {
-        // Create main UI structure
-        this.createMainLayout();
-
-        // Initialize components
-        this.initializeHeader();
-        this.initializeSidebar();
-        this.initializeMainContent();
-        this.initializeStatusBar();
-
-        // Set up event listeners
-        this.setupEventListeners();
-
-        // Load initial data
-        await this.loadInitialData();
-    }
-
-    createMainLayout() {
-        const app = document.getElementById('app');
-
-        app.innerHTML = `
-            <div class="app-container">
-                <header class="app-header">
-                    <div class="header-left">
-                        <h1 class="app-title">Image Gallery Manager</h1>
-                    </div>
-                    <div class="header-center">
-                        <div class="search-container">
-                            <input type="text" class="search-input" placeholder="Search images, tags, artists...">
-                            <button class="search-button">🔍</button>
-                        </div>
-                    </div>
-                    <div class="header-right">
-                        <button class="header-button" id="settings-btn">⚙️</button>
-                        <button class="header-button" id="minimize-btn">−</button>
-                        <button class="header-button" id="maximize-btn">⬜</button>
-                        <button class="header-button" id="close-btn">✕</button>
-                    </div>
-                </header>
-
-                <div class="app-main">
-                    <aside class="sidebar">
-                        <nav class="sidebar-nav">
-                            <button class="nav-button active" data-view="gallery">
-                                🖼️ Gallery
-                            </button>
-                            <button class="nav-button" data-view="tags">
-                                🏷️ Tags
-                            </button>
-                            <button class="nav-button" data-view="sets">
-                                📁 Sets
-                            </button>
-                            <button class="nav-button" data-view="import">
-                                📥 Import
-                            </button>
-                            <button class="nav-button" data-view="settings">
-                                ⚙️ Settings
-                            </button>
-                        </nav>
-                    </aside>
-
-                    <main class="main-content">
-                        <div class="content-area" id="content-area">
-                            <!-- Content will be loaded here -->
-                        </div>
-                    </main>
-                </div>
-
-                <footer class="status-bar">
-                    <div class="status-left">
-                        <span id="status-text">Ready</span>
-                    </div>
-                    <div class="status-right">
-                        <span id="stats-text">0 images</span>
-                    </div>
-                </footer>
-            </div>
-        `;
-    }
-
-    initializeHeader() {
-        // Window controls - with error handling
-        const minimizeBtn = document.getElementById('minimize-btn');
-        const maximizeBtn = document.getElementById('maximize-btn');
-        const closeBtn = document.getElementById('close-btn');
-
-        if (minimizeBtn) {
-            minimizeBtn.addEventListener('click', () => {
-                window.electronAPI.window.minimize();
-            });
-        }
-
-        if (maximizeBtn) {
-            maximizeBtn.addEventListener('click', () => {
-                window.electronAPI.window.maximize();
-            });
-        }
-
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                window.electronAPI.window.close();
-            });
-        }
-    }
-
-    initializeSidebar() {
-        // Navigation buttons
-        const navButtons = document.querySelectorAll('.nav-button');
-
-        navButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                const view = e.target.dataset.view;
-                this.switchView(view);
-            });
-        });
-    }
-
-    initializeMainContent() {
-        this.showGalleryView();
-    }
-
-    initializeStatusBar() {
-        // Status bar is already created in HTML
-    }
-
-    setupEventListeners() {
-        // Search functionality
-        const searchInput = document.querySelector('.search-input');
-        if (searchInput) {
-            searchInput.addEventListener('input', (e) => {
-                this.handleSearch(e.target.value);
-            });
-        }
-
-        // Import card event listeners
-        const archiveCard = document.querySelector('.import-archive-card');
-        const urlCard = document.querySelector('.import-url-card');
-        const directoryCard = document.querySelector('.import-directory-card');
-
-        if (archiveCard) {
-            archiveCard.addEventListener('click', () => this.importFromArchive());
-        }
-        if (urlCard) {
-            urlCard.addEventListener('click', () => this.importFromUrl());
-        }
-        if (directoryCard) {
-            directoryCard.addEventListener('click', () => this.importFromDirectory());
-        }
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey) {
-                switch (e.key) {
-                    case 'f':
-                        e.preventDefault();
-                        if (searchInput) searchInput.focus();
-                        break;
-                    case 'k':
-                        if (e.shiftKey) {
-                            e.preventDefault();
-                            // TODO: Open command palette
-                        }
-                        break;
-                }
-            }
-        });
-    }
-
-    async loadInitialData() {
-        try {
-            // Load tags
-            const tagsResult = await window.electronAPI.tags.getAll();
-            if (tagsResult.success) {
-                this.tags = tagsResult.data;
-            } else {
-                console.error('Failed to load tags:', tagsResult.error);
-                this.showError('Failed to load tags. Some features may not work properly.');
-            }
-
-            // Load image count - Note: db.query removed for security, need to add specific IPC channel
-            // For now, we'll show 0 until we implement proper image counting
-            this.updateStats(0);
-
-            this.updateStatus('Ready');
-        } catch (error) {
-            console.error('Failed to load initial data:', error);
-            this.showError('Failed to load application data. Please restart the application.');
-        }
-    }
-
-    switchView(view) {
-        // Update active navigation button
-        document.querySelectorAll('.nav-button').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.querySelector(`[data-view="${view}"]`).classList.add('active');
-
-        // Switch content
-        switch (view) {
-            case 'gallery':
-                this.showGalleryView();
-                break;
-            case 'tags':
-                this.showTagsView();
-                break;
-            case 'sets':
-                this.showSetsView();
-                break;
-            case 'import':
-                this.showImportView();
-                break;
-            case 'settings':
-                this.showSettingsView();
-                break;
-        }
-
-        // Keep currentView in sync
-        this.currentView = view;
-    }
-
-    showGalleryView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="gallery-view">
-                <div class="gallery-header">
-                    <div class="gallery-info">
-                        <span id="gallery-count">${this.galleryImages.length} images</span>
-                    </div>
-                    <div class="gallery-actions">
-                        <button class="secondary-button" id="select-files-btn">Add Images</button>
-                    </div>
-                </div>
-                <div class="gallery-container" id="gallery-container">
-                    <div class="gallery-grid" id="gallery-grid">
-                        ${this.renderGalleryGrid()}
-                    </div>
-                    <div class="gallery-drop-zone" id="gallery-drop-zone">
-                        <div class="drop-zone-content">
-                            <div class="drop-icon">📸</div>
-                            <h3>Drop Images Here</h3>
-                            <p>or click "Add Images" above</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        // Set up event listeners
-        this.setupGalleryEventListeners();
-
-        // Set up drag and drop
+        this.initializeElements();
+        this.bindEvents();
         this.setupDragAndDrop();
+
+        // Override console methods to capture logs
+        this.setupDebugCapture();
+
+        console.log('🔍 DEBUG: Gallery initialized with debug logging');
+        console.log('🔍 DEBUG: Press Ctrl+D to export full debug logs to file');
     }
 
-    renderGalleryGrid() {
-        if (this.galleryImages.length === 0) {
-            return `
-                <div class="empty-state">
-                    <div class="empty-icon">🖼️</div>
-                    <h3>No Images Yet</h3>
-                    <p>Drag and drop images here or use "Add Images"</p>
-                </div>
-            `;
-        }
+    setupDebugCapture() {
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
 
-        return this.galleryImages.map(image => `
-            <div class="gallery-item" data-image-id="${image.id}" data-image-path="${image.path}">
-                <div class="image-container">
-                    <img src="" alt="${image.filename}" class="gallery-image" loading="lazy">
-                    <div class="image-overlay">
-                        <div class="image-info">
-                            <span class="image-name">${image.filename}</span>
-                            <span class="image-size">${this.formatFileSize(image.size)}</span>
-                        </div>
-                    </div>
-                    <div class="image-error" style="display: none;">
-                        <span>⚠️ Failed to load</span>
-                    </div>
-                </div>
-            </div>
-        `).join('');
+        console.log = (...args) => {
+            const message = args.join(' ');
+            this.debugLogs.push(`[LOG ${new Date().toISOString()}] ${message}`);
+            originalLog.apply(console, args);
+        };
+
+        console.error = (...args) => {
+            const message = args.join(' ');
+            this.debugLogs.push(`[ERROR ${new Date().toISOString()}] ${message}`);
+            originalError.apply(console, args);
+        };
+
+        console.warn = (...args) => {
+            const message = args.join(' ');
+            this.debugLogs.push(`[WARN ${new Date().toISOString()}] ${message}`);
+            originalWarn.apply(console, args);
+        };
     }
 
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    async exportDebugLogs() {
+        let mainLogPath = '';
+        try {
+            mainLogPath = await window.electronAPI.getDebugLogPath();
+        } catch (e) {
+            console.log('Could not get main process log path');
+        }
+
+        const header = [
+            '=== GALLERY DEBUG LOGS ===',
+            `Generated: ${new Date().toISOString()}`,
+            `Main Process Logs: ${mainLogPath}`,
+            '================================',
+            ''
+        ];
+
+        const fullLogs = header.concat(this.debugLogs);
+        const blob = new Blob([fullLogs.join('\n')], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gallery-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        console.log(`🔍 DEBUG: Renderer logs exported to download folder`);
+        if (mainLogPath) {
+            console.log(`🔍 DEBUG: Main process logs available at: ${mainLogPath}`);
+        }
     }
 
-    setupGalleryEventListeners() {
-        // Add images button
-        const selectBtn = document.getElementById('select-files-btn');
-        if (selectBtn) {
-            selectBtn.addEventListener('click', () => this.selectImages());
-        }
+    initializeElements() {
+        // Main containers
+        this.dropZone = document.getElementById('drop-zone');
+        this.galleryGrid = document.getElementById('gallery-grid');
+        this.fullscreenOverlay = document.getElementById('fullscreen-overlay');
+        this.loadingIndicator = document.getElementById('loading-indicator');
 
-        // Gallery item clicks for fullscreen
-        const galleryGrid = document.getElementById('gallery-grid');
-        if (galleryGrid) {
-            galleryGrid.addEventListener('click', (event) => {
-                const galleryItem = event.target.closest('.gallery-item');
-                if (galleryItem) {
-                    const imageId = galleryItem.dataset.imageId;
-                    const image = this.galleryImages.find(img => img.id === imageId);
-                    if (image) {
-                        this.openFullscreen(image);
-                    }
-                }
-            });
+        // Buttons and controls
+        this.fileSelectBtn = document.getElementById('file-select-btn');
+        this.closeFullscreenBtn = document.getElementById('close-fullscreen');
+        this.prevBtn = document.getElementById('prev-btn');
+        this.nextBtn = document.getElementById('next-btn');
+
+        // Image elements
+        this.fullscreenImage = document.getElementById('fullscreen-image');
+
+        // Loading elements
+        this.loadingText = document.getElementById('loading-text');
+        this.loadingProgress = document.getElementById('loading-progress');
+        this.progressFill = document.getElementById('progress-fill');
+        this.progressText = document.getElementById('progress-text');
+
+        // Verify critical elements exist
+        if (!this.dropZone || !this.galleryGrid || !this.fileSelectBtn) {
+            console.error('Critical UI elements not found!');
         }
+    }
+
+    bindEvents() {
+        // File selection
+        this.fileSelectBtn.addEventListener('click', () => this.selectFiles());
+
+        // Fullscreen controls
+        this.closeFullscreenBtn.addEventListener('click', () => this.closeFullscreen());
+        this.prevBtn.addEventListener('click', () => this.showPrevious());
+        this.nextBtn.addEventListener('click', () => this.showNext());
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => this.handleKeydown(e));
+
+        // Fullscreen image click to close
+        this.fullscreenImage.addEventListener('click', () => this.closeFullscreen());
     }
 
     setupDragAndDrop() {
-        const dropZone = document.getElementById('gallery-drop-zone');
         const galleryContainer = document.getElementById('gallery-container');
 
-        if (!dropZone || !galleryContainer) return;
-
-        // Drag over
-        galleryContainer.addEventListener('dragover', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            galleryContainer.classList.add('drag-over');
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            galleryContainer.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
         });
 
-        // Drag leave
-        galleryContainer.addEventListener('dragleave', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            // Only remove class if leaving the container entirely
-            if (!galleryContainer.contains(event.relatedTarget)) {
-                galleryContainer.classList.remove('drag-over');
+        galleryContainer.addEventListener('dragenter', (e) => {
+            this.dropZone.classList.add('drag-over');
+        });
+
+        galleryContainer.addEventListener('dragleave', (e) => {
+            // Only remove class if we're actually leaving the drop zone
+            if (!galleryContainer.contains(e.relatedTarget)) {
+                this.dropZone.classList.remove('drag-over');
             }
         });
 
-        // Drop
-        galleryContainer.addEventListener('drop', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            galleryContainer.classList.remove('drag-over');
-
-            const files = Array.from(event.dataTransfer.files);
-            this.handleDroppedFiles(files);
+        galleryContainer.addEventListener('drop', (e) => {
+            this.dropZone.classList.remove('drag-over');
+            const files = Array.from(e.dataTransfer.files);
+            this.loadFiles(files);
         });
+
+        // No hover effects to optimize
     }
 
-    async selectImages() {
+
+    async selectFiles() {
         try {
-            const result = await window.electronAPI.files.selectImages();
-            if (result.success) {
-                await this.loadImagesFromPaths(result.data.files);
+            const filePaths = await window.electronAPI.selectFiles();
+            if (filePaths && filePaths.length > 0) {
+                await this.loadFilesFromPaths(filePaths);
             }
         } catch (error) {
-            this.showError(`Failed to select images: ${error.message}`);
+            console.error('Error selecting files:', error);
+            alert('Error selecting files: ' + error.message);
         }
     }
 
-    async handleDroppedFiles(files) {
-        // Filter to only image files
-        const imageFiles = files.filter(file => {
-            const ext = file.name.toLowerCase().split('.').pop();
-            return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff', 'tif'].includes(ext);
-        });
+    async loadFiles(files) {
+        console.log('🔍 DEBUG: loadFiles called with', files.length, 'files');
+        const imageFiles = files.filter(file => this.isImageFile(file));
+        console.log('🔍 DEBUG: Filtered to', imageFiles.length, 'image files');
 
         if (imageFiles.length === 0) {
-            this.showError('No valid image files found in drop');
+            console.log('🔍 DEBUG: No image files found');
+            alert('No valid image files selected.');
             return;
         }
 
-        const filePaths = imageFiles.map(file => file.path);
-        await this.loadImagesFromPaths(filePaths);
-    }
+        console.log(`🚀 Starting to load ${imageFiles.length} files...`);
+        console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+        const startTime = performance.now();
 
-    async loadImagesFromPaths(filePaths) {
+        this.showLoading();
+        this.updateProgress(0, imageFiles.length);
+        this.images = [];
+
         try {
-            const validImages = [];
+            // Process files in smaller batches to show progress
+            const batchSize = Math.min(3, imageFiles.length); // Process up to 3 at a time for better performance
+            let processedCount = 0;
 
-            for (const filePath of filePaths) {
-                try {
-                    // Validate format first
-                    const validation = await window.electronAPI.images.validateFormat(filePath);
-                    if (validation.success && validation.data.isValid) {
-                        // Load metadata
-                        const metadata = await window.electronAPI.images.loadMetadata(filePath);
-                        if (metadata.success) {
-                            validImages.push(metadata.data);
+            console.log(`🔍 DEBUG: Processing in batches of ${batchSize}...`);
+
+            for (let i = 0; i < imageFiles.length; i += batchSize) {
+                const batch = imageFiles.slice(i, i + batchSize);
+                console.log(`🔍 DEBUG: Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(imageFiles.length/batchSize)} (${batch.length} files)`);
+
+                const batchPromises = batch.map(file => this.processImageFile(file));
+                const batchResults = await Promise.allSettled(batchPromises);
+
+                // Process settled results: collect fulfilled results without internal errors, log rejections
+                const successfulResults = [];
+                let batchSuccessfulCount = 0;
+
+                for (const settled of batchResults) {
+                    if (settled.status === 'fulfilled') {
+                        const result = settled.value;
+                        if (result && !result.error) {
+                            successfulResults.push(result);
+                            batchSuccessfulCount++;
+                        } else if (result && result.error) {
+                            console.error(`❌ Internal error processing file ${result.name || 'unknown'}`);
                         }
+                    } else {
+                        console.error(`❌ Promise rejected:`, settled.reason);
                     }
-                } catch (error) {
-                    console.warn(`Skipping invalid image ${filePath}:`, error);
                 }
+
+                this.images.push(...successfulResults);
+
+                processedCount += batch.length;
+                this.updateProgress(processedCount, imageFiles.length);
+
+                console.log(`🔍 DEBUG: Batch complete. Total processed: ${processedCount}/${imageFiles.length}, successful: ${this.images.length}, batch success: ${batchSuccessfulCount}/${batch.length}`);
             }
 
-            if (validImages.length === 0) {
-                this.showError('No valid images could be loaded');
-                return;
-            }
+            const failedCount = imageFiles.length - this.images.length;
+            const loadTime = performance.now() - startTime;
 
-            // Add to gallery
-            this.galleryImages.push(...validImages);
+            console.log(`✅ Loaded ${this.images.length} images successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
+            console.log('🔍 DEBUG: Memory after loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+            console.log(`📊 Average time per image: ${(loadTime / imageFiles.length).toFixed(2)}ms`);
 
-            // Update the display
-            this.updateGalleryDisplay();
-
-            // Load the images (start with visible ones)
-            this.loadVisibleImages();
-
+            console.log('🔍 DEBUG: Rendering gallery...');
+            this.renderGallery();
+            console.log('🔍 DEBUG: Hiding drop zone...');
+            this.hideDropZone();
+            console.log('✅ Gallery load complete!');
         } catch (error) {
-            this.showError(`Failed to load images: ${error.message}`);
+            console.error('❌ Error loading files:', error);
+            alert('Error loading images: ' + error.message);
+        } finally {
+            this.hideLoading();
         }
     }
 
-    updateGalleryDisplay() {
-        const galleryGrid = document.getElementById('gallery-grid');
-        const galleryCount = document.getElementById('gallery-count');
+    async loadFilesFromPaths(filePaths) {
+        console.log('🔍 DEBUG: loadFilesFromPaths called with', filePaths.length, 'paths');
+        console.log(`🚀 Starting to load ${filePaths.length} files from paths...`);
+        console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+        const startTime = performance.now();
 
-        if (galleryGrid) {
-            galleryGrid.innerHTML = this.renderGalleryGrid();
-        }
+        this.showLoading();
+        this.updateProgress(0, filePaths.length);
+        this.images = [];
 
-        if (galleryCount) {
-            galleryCount.textContent = `${this.galleryImages.length} image${this.galleryImages.length !== 1 ? 's' : ''}`;
-        }
-    }
+        try {
+            // Process files in smaller batches to show progress
+            const batchSize = Math.min(2, filePaths.length); // Very small batches for file system operations
+            let processedCount = 0;
 
-    async loadVisibleImages() {
-        // Simple lazy loading - load all images for now (can be optimized later)
-        const imageElements = document.querySelectorAll('.gallery-image');
+            console.log(`🔍 DEBUG: Processing file paths in batches of ${batchSize}...`);
 
-        for (const imgElement of imageElements) {
-            const galleryItem = imgElement.closest('.gallery-item');
-            if (!galleryItem) continue;
+            for (let i = 0; i < filePaths.length; i += batchSize) {
+                const batch = filePaths.slice(i, i + batchSize);
+                console.log(`🔍 DEBUG: Processing path batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(filePaths.length/batchSize)} (${batch.length} files)`);
 
-            const imagePath = galleryItem.dataset.imagePath;
-            if (!imagePath) continue;
+                const batchPromises = batch.map(filePath => this.processImageFileFromPath(filePath));
+                const batchResults = await Promise.allSettled(batchPromises);
 
-            try {
-                // Load full-quality image (we'll optimize this later)
-                const result = await window.electronAPI.images.getFullQuality(imagePath);
-                if (result.success) {
-                    const blob = new Blob([result.data], { type: 'image/jpeg' });
-                    const url = URL.createObjectURL(blob);
-                    imgElement.src = url;
+                // Process settled results: collect fulfilled results without internal errors, log rejections
+                const successfulResults = [];
+                let batchSuccessfulCount = 0;
 
-                    // Clean up object URL when image loads
-                    imgElement.addEventListener('load', () => {
-                        URL.revokeObjectURL(url);
-                    });
-                } else {
-                    this.showImageError(imgElement);
+                for (const settled of batchResults) {
+                    if (settled.status === 'fulfilled') {
+                        const result = settled.value;
+                        if (result && !result.error) {
+                            successfulResults.push(result);
+                            batchSuccessfulCount++;
+                        } else if (result && result.error) {
+                            console.error(`❌ Internal error processing file ${result.name || result.path || 'unknown'}`);
+                        }
+                    } else {
+                        console.error(`❌ Promise rejected:`, settled.reason);
+                    }
                 }
-            } catch (error) {
-                console.error(`Failed to load image ${imagePath}:`, error);
-                this.showImageError(imgElement);
+
+                this.images.push(...successfulResults);
+
+                processedCount += batch.length;
+                this.updateProgress(processedCount, filePaths.length);
+
+                console.log(`🔍 DEBUG: Path batch complete. Total processed: ${processedCount}/${filePaths.length}, successful: ${this.images.length}, batch success: ${batchSuccessfulCount}/${batch.length}`);
             }
+
+            const failedCount = filePaths.length - this.images.length;
+            const loadTime = performance.now() - startTime;
+
+            console.log(`✅ Loaded ${this.images.length} images from paths successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
+            console.log('🔍 DEBUG: Memory after loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+            console.log(`📊 Average time per image: ${(loadTime / filePaths.length).toFixed(2)}ms`);
+
+            console.log('🔍 DEBUG: Rendering gallery...');
+            this.renderGallery();
+            console.log('🔍 DEBUG: Hiding drop zone...');
+            this.hideDropZone();
+            console.log('✅ Gallery load from paths complete!');
+        } catch (error) {
+            console.error('❌ Error loading files from paths:', error);
+            alert('Error loading images: ' + error.message);
+        } finally {
+            this.hideLoading();
         }
     }
 
-    showImageError(imgElement) {
-        const galleryItem = imgElement.closest('.gallery-item');
-        if (galleryItem) {
-            const errorDiv = galleryItem.querySelector('.image-error');
-            if (errorDiv) {
-                errorDiv.style.display = 'flex';
-            }
+    async processImageFile(file) {
+        const startTime = performance.now();
+        console.log(`📁 Processing dragged file ${file.name}...`);
+
+        // For Electron, we can use the file path directly instead of FileReader
+        // This avoids the slow base64 encoding of large files
+        if (file.path) {
+            // Direct file path available (usually on desktop)
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const processTime = performance.now() - startTime;
+                    console.log(`✅ Processed ${file.name} in ${processTime.toFixed(2)}ms`);
+                    resolve({
+                        id: Date.now() + Math.random(),
+                        name: file.name,
+                        path: file.path,
+                        dataUrl: `file://${file.path.replace(/\\/g, '/')}`,
+                        width: img.naturalWidth,
+                        height: img.naturalHeight,
+                        aspectRatio: img.naturalWidth / img.naturalHeight,
+                        file: file
+                    });
+                };
+                img.onerror = () => {
+                    console.log(`❌ Failed to load dragged image ${file.name}, falling back to FileReader`);
+                    // Fallback to FileReader if file:// URL fails
+                    this.fallbackProcessImageFile(file, startTime).then(resolve).catch(reject);
+                };
+                img.crossOrigin = 'anonymous';
+                img.src = `file://${file.path.replace(/\\/g, '/')}`;
+            });
+        } else {
+            // Fallback for cases where file.path is not available
+            return this.fallbackProcessImageFile(file, startTime);
         }
-        imgElement.style.display = 'none';
     }
 
-    openFullscreen(image) {
-        const currentIndex = this.galleryImages.findIndex(img => img.id === image.id);
-        if (currentIndex === -1) return;
+    async fallbackProcessImageFile(file, startTime) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
 
-        // Create fullscreen overlay
-        const overlay = document.createElement('div');
-        Object.assign(overlay.style, {
-            position: 'fixed',
-            top: '0',
-            left: '0',
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(0, 0, 0, 0.95)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: '10000',
-            cursor: 'default'
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const processTime = performance.now() - startTime;
+                    console.log(`✅ Fallback processed ${file.name} in ${processTime.toFixed(2)}ms`);
+                    resolve({
+                        id: Date.now() + Math.random(),
+                        name: file.name,
+                        path: file.path || file.name,
+                        dataUrl: e.target.result,
+                        width: img.naturalWidth,
+                        height: img.naturalHeight,
+                        aspectRatio: img.naturalWidth / img.naturalHeight,
+                        file: file
+                    });
+                };
+                img.onerror = () => {
+                    console.log(`❌ Failed to load dragged image ${file.name}`);
+                    resolve({
+                        id: Date.now() + Math.random(),
+                        name: file.name,
+                        path: file.path || file.name,
+                        error: true,
+                        dataUrl: null
+                    });
+                };
+                img.src = e.target.result;
+            };
+
+            reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async processImageFileFromPath(filePath) {
+        const startTime = performance.now();
+        try {
+            // Try file:// URL first (fastest)
+            const fileUrl = `file://${filePath.replace(/\\/g, '/')}`;
+            const stats = await window.electronAPI.getFileStats(filePath);
+
+            console.log(`Processing ${filePath.split(/[/\\]/).pop()}...`);
+
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+
+                img.onload = () => {
+                    const processTime = performance.now() - startTime;
+                    console.log(`✅ Loaded ${filePath.split(/[/\\]/).pop()} in ${processTime.toFixed(2)}ms`);
+                    resolve({
+                        id: Date.now() + Math.random(),
+                        name: filePath.split(/[/\\]/).pop(),
+                        path: filePath,
+                        dataUrl: fileUrl,
+                        width: img.naturalWidth,
+                        height: img.naturalHeight,
+                        aspectRatio: img.naturalWidth / img.naturalHeight,
+                        size: stats.size,
+                        mtime: stats.mtime
+                    });
+                };
+
+                img.onerror = () => {
+                    console.log(`❌ File URL failed for ${filePath.split(/[/\\]/).pop()}, trying blob fallback...`);
+                    // Fallback to reading the file as blob
+                    this.readFileAsBlob(filePath, stats, startTime).then(resolve).catch(reject);
+                };
+
+                img.crossOrigin = 'anonymous';
+                img.src = fileUrl;
+            });
+        } catch (error) {
+            console.error(`Error processing ${filePath}:`, error);
+            return {
+                id: Date.now() + Math.random(),
+                name: filePath.split(/[/\\]/).pop(),
+                path: filePath,
+                error: true,
+                dataUrl: null
+            };
+        }
+    }
+
+    async readFileAsBlob(filePath, stats, startTime) {
+        console.log(`📖 Reading ${filePath.split(/[/\\]/).pop()} as blob...`);
+        const buffer = await window.electronAPI.readFile(filePath);
+        const uint8Array = new Uint8Array(buffer);
+        const extension = filePath.split('.').pop().toLowerCase();
+        const mimeTypes = {
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'bmp': 'image/bmp',
+            'tiff': 'image/tiff',
+            'svg': 'image/svg+xml'
+        };
+        const mimeType = mimeTypes[extension] || 'application/octet-stream';
+        const blob = new Blob([uint8Array], { type: mimeType });
+        const dataUrl = URL.createObjectURL(blob);
+
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                const totalTime = performance.now() - startTime;
+                console.log(`✅ Blob loaded ${filePath.split(/[/\\]/).pop()} in ${totalTime.toFixed(2)}ms`);
+                resolve({
+                    id: Date.now() + Math.random(),
+                    name: filePath.split(/[/\\]/).pop(),
+                    path: filePath,
+                    dataUrl: dataUrl,
+                    width: img.naturalWidth,
+                    height: img.naturalHeight,
+                    aspectRatio: img.naturalWidth / img.naturalHeight,
+                    size: stats.size,
+                    mtime: stats.mtime
+                });
+            };
+            img.onerror = reject;
+            img.src = dataUrl;
+        });
+    }
+
+    isImageFile(file) {
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg'];
+        const fileName = (file.name || file.path || file).toLowerCase();
+        return imageExtensions.some(ext => fileName.endsWith(ext));
+    }
+
+    renderGallery() {
+        console.log(`🔍 DEBUG: Starting gallery render for ${this.images.length} images...`);
+        const renderStart = performance.now();
+
+        // Clear existing content
+        this.galleryGrid.innerHTML = '';
+
+        // Use DocumentFragment for better performance
+        const fragment = document.createDocumentFragment();
+
+        this.images.forEach((image, index) => {
+            if (image.error) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'image-error';
+                errorDiv.innerHTML = `
+                    <div class="image-error-icon">⚠️</div>
+                    <div>Failed to load</div>
+                    <div style="font-size: 0.8rem; opacity: 0.7;">${image.name}</div>
+                `;
+                errorDiv.addEventListener('click', () => this.openFullscreen(index));
+                fragment.appendChild(errorDiv);
+            } else {
+                const img = document.createElement('img');
+                img.className = 'gallery-image';
+                img.src = image.dataUrl;
+                img.alt = image.name;
+                img.loading = 'lazy'; // Defer loading off-screen images
+                img.decoding = 'async'; // Don't block on image decoding
+                img.addEventListener('click', () => this.openFullscreen(index));
+                fragment.appendChild(img);
+            }
         });
 
-        // Create image container
-        const imageContainer = document.createElement('div');
-        Object.assign(imageContainer.style, {
-            position: 'relative',
-            maxWidth: '90vw',
-            maxHeight: '90vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-        });
+        this.galleryGrid.appendChild(fragment);
+        const renderTime = performance.now() - renderStart;
+        console.log(`🔍 DEBUG: Gallery render completed in ${renderTime.toFixed(2)}ms`);
+    }
 
-        // Create image element
-        const fsImage = document.createElement('img');
-        Object.assign(fsImage.style, {
-            maxWidth: '100%',
-            maxHeight: '100%',
-            objectFit: 'contain',
-            borderRadius: '4px',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)'
-        });
-        fsImage.alt = image.filename;
+    openFullscreen(index) {
+        if (this.images.length === 0 || this.images[index].error) return;
 
-        // Create navigation controls
-        const navLeft = document.createElement('button');
-        Object.assign(navLeft.style, {
-            position: 'absolute',
-            left: '20px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            background: 'rgba(0, 0, 0, 0.7)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '50%',
-            width: '50px',
-            height: '50px',
-            fontSize: '24px',
-            cursor: 'pointer',
-            display: currentIndex > 0 ? 'flex' : 'none',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background-color 0.2s'
-        });
-        navLeft.textContent = '‹';
-        navLeft.addEventListener('click', () => this.navigateFullscreen(-1));
+        this.currentIndex = index;
+        this.isFullscreen = true;
 
-        const navRight = document.createElement('button');
-        Object.assign(navRight.style, {
-            position: 'absolute',
-            right: '20px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            background: 'rgba(0, 0, 0, 0.7)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '50%',
-            width: '50px',
-            height: '50px',
-            fontSize: '24px',
-            cursor: 'pointer',
-            display: currentIndex < this.galleryImages.length - 1 ? 'flex' : 'none',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background-color 0.2s'
-        });
-        navRight.textContent = '›';
-        navRight.addEventListener('click', () => this.navigateFullscreen(1));
+        this.updateFullscreenImage();
+        this.updateNavigationButtons();
+        this.fullscreenOverlay.classList.remove('hidden');
 
-        // Create close button
-        const closeBtn = document.createElement('button');
-        Object.assign(closeBtn.style, {
-            position: 'absolute',
-            top: '20px',
-            right: '20px',
-            background: 'rgba(0, 0, 0, 0.7)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '50%',
-            width: '40px',
-            height: '40px',
-            fontSize: '20px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background-color 0.2s'
-        });
-        closeBtn.textContent = '×';
-        closeBtn.addEventListener('click', () => this.closeFullscreen());
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
 
-        // Create image info overlay
-        const infoOverlay = document.createElement('div');
-        Object.assign(infoOverlay.style, {
-            position: 'absolute',
-            bottom: '20px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'rgba(0, 0, 0, 0.8)',
-            color: 'white',
-            padding: '10px 20px',
-            borderRadius: '20px',
-            fontSize: '14px',
-            textAlign: 'center',
-            opacity: '0',
-            transition: 'opacity 0.3s',
-            pointerEvents: 'none'
-        });
-        infoOverlay.textContent = `${currentIndex + 1} / ${this.galleryImages.length} • ${image.filename} • ${this.formatFileSize(image.size)}`;
-
-        // Add hover effect for info
-        imageContainer.addEventListener('mouseenter', () => {
-            infoOverlay.style.opacity = '1';
-        });
-        imageContainer.addEventListener('mouseleave', () => {
-            infoOverlay.style.opacity = '0';
-        });
-
-        // Assemble the overlay
-        imageContainer.appendChild(fsImage);
-        imageContainer.appendChild(navLeft);
-        imageContainer.appendChild(navRight);
-        imageContainer.appendChild(closeBtn);
-        imageContainer.appendChild(infoOverlay);
-        overlay.appendChild(imageContainer);
-
-        // Store fullscreen state
-        this.fullscreenState = {
-            overlay,
-            fsImage,
-            navLeft,
-            navRight,
-            infoOverlay,
-            currentIndex
+        // Add fullscreen-specific event listeners
+        this.fullscreenOverlay.onclick = (e) => {
+            if (e.target === this.fullscreenOverlay) this.closeFullscreen();
         };
 
-        // Load the image
-        this.loadFullscreenImage(image);
-
-        // Add to DOM
-        document.body.appendChild(overlay);
-
-        // Set up keyboard navigation
-        this.setupKeyboardNavigation();
-
-        // Focus the overlay for keyboard events
-        overlay.focus();
-    }
-
-    async loadFullscreenImage(image) {
-        if (!this.fullscreenState) return;
-
-        const { fsImage } = this.fullscreenState;
-
-        try {
-            const result = await window.electronAPI.images.getFullQuality(image.path);
-            if (result.success) {
-                const blob = new Blob([result.data], { type: 'image/jpeg' });
-                const url = URL.createObjectURL(blob);
-                fsImage.src = url;
-
-                // Clean up object URL when image loads
-                fsImage.addEventListener('load', () => {
-                    URL.revokeObjectURL(url);
-                });
-            } else {
-                fsImage.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxNiIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+RXJyb3I6IEZhYWxlZCB0byBsb2FkPC90ZXh0Pjwvc3ZnPg==';
-            }
-        } catch (error) {
-            console.error('Failed to load fullscreen image:', error);
-            fsImage.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxNiIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+RXJyb3I6IEZhYWxlZCB0byBsb2FkPC90ZXh0Pjwvc3ZnPg==';
-        }
-    }
-
-    navigateFullscreen(direction) {
-        if (!this.fullscreenState) return;
-
-        const { currentIndex, navLeft, navRight, infoOverlay } = this.fullscreenState;
-        const newIndex = currentIndex + direction;
-
-        if (newIndex >= 0 && newIndex < this.galleryImages.length) {
-            this.fullscreenState.currentIndex = newIndex;
-            const newImage = this.galleryImages[newIndex];
-
-            // Update navigation buttons
-            navLeft.style.display = newIndex > 0 ? 'flex' : 'none';
-            navRight.style.display = newIndex < this.galleryImages.length - 1 ? 'flex' : 'none';
-
-            // Update info
-            infoOverlay.textContent = `${newIndex + 1} / ${this.galleryImages.length} • ${newImage.filename} • ${this.formatFileSize(newImage.size)}`;
-
-            // Load new image
-            this.loadFullscreenImage(newImage);
-        }
+        this.fullscreenWheelHandler = (e) => {
+            e.preventDefault();
+            if (e.deltaX > 0 || e.deltaY > 0) this.showNext();
+            else if (e.deltaX < 0 || e.deltaY < 0) this.showPrevious();
+        };
+        this.fullscreenOverlay.addEventListener('wheel', this.fullscreenWheelHandler, { passive: false });
     }
 
     closeFullscreen() {
-        if (!this.fullscreenState) return;
+        this.isFullscreen = false;
+        this.fullscreenOverlay.classList.add('hidden');
+        document.body.style.overflow = '';
 
-        const { overlay } = this.fullscreenState;
-        document.body.removeChild(overlay);
-
-        // Clean up keyboard navigation
-        this.cleanupKeyboardNavigation();
-
-        this.fullscreenState = null;
-    }
-
-    setupKeyboardNavigation() {
-        this.keyboardHandler = (event) => {
-            switch (event.key) {
-                case 'ArrowLeft':
-                    event.preventDefault();
-                    this.navigateFullscreen(-1);
-                    break;
-                case 'ArrowRight':
-                    event.preventDefault();
-                    this.navigateFullscreen(1);
-                    break;
-                case 'Escape':
-                    event.preventDefault();
-                    this.closeFullscreen();
-                    break;
-            }
-        };
-
-        document.addEventListener('keydown', this.keyboardHandler);
-    }
-
-    cleanupKeyboardNavigation() {
-        if (this.keyboardHandler) {
-            document.removeEventListener('keydown', this.keyboardHandler);
-            this.keyboardHandler = null;
+        // Clean up event listeners
+        this.fullscreenOverlay.onclick = null;
+        if (this.fullscreenWheelHandler) {
+            this.fullscreenOverlay.removeEventListener('wheel', this.fullscreenWheelHandler);
+            this.fullscreenWheelHandler = null;
         }
     }
 
-    showTagsView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="tags-view">
-                <div class="tags-header">
-                    <h2>Tag Management</h2>
-                    <button class="primary-button" id="add-tag-btn">Add Tag</button>
-                </div>
-                <div class="tags-list" id="tags-list">
-                    <!-- Tags will be loaded here -->
-                </div>
-            </div>
-        `;
-
-        this.loadTagsList();
+    showPrevious() {
+        if (this.currentIndex > 0) {
+            this.currentIndex--;
+            this.updateFullscreenImage();
+        }
     }
 
-    showSetsView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="sets-view">
-                <div class="sets-header">
-                    <h2>Image Sets</h2>
-                    <button class="primary-button">Create Set</button>
-                </div>
-                <div class="sets-grid" id="sets-grid">
-                    <div class="empty-state">
-                        <div class="empty-icon">📁</div>
-                        <h3>No Sets Yet</h3>
-                        <p>Create sets to group related images</p>
-                    </div>
-                </div>
-            </div>
-        `;
+    showNext() {
+        if (this.currentIndex < this.images.length - 1) {
+            this.currentIndex++;
+            this.updateFullscreenImage();
+        }
     }
 
-    showImportView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="import-view">
-                <div class="import-header">
-                    <h2>Import Images</h2>
-                </div>
-                <div class="import-options">
-                    <div class="import-card import-archive-card">
-                        <div class="card-icon">📦</div>
-                        <h3>From Archive</h3>
-                        <p>Import images from ZIP, RAR, or 7Z files</p>
-                    </div>
-                    <div class="import-card import-url-card">
-                        <div class="card-icon">🌐</div>
-                        <h3>From URL</h3>
-                        <p>Download and import from web URLs</p>
-                    </div>
-                    <div class="import-card import-directory-card">
-                        <div class="card-icon">📁</div>
-                        <h3>From Directory</h3>
-                        <p>Import images from local folders</p>
-                    </div>
-                </div>
-            </div>
-        `;
+    updateFullscreenImage() {
+        const image = this.images[this.currentIndex];
+        if (!image || image.error) return;
+
+        this.fullscreenImage.src = image.dataUrl;
+        this.fullscreenImage.alt = image.name;
+        this.updateNavigationButtons();
     }
 
-    showSettingsView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="settings-view">
-                <div class="settings-header">
-                    <h2>Settings</h2>
-                </div>
-                <div class="settings-content">
-                    <div class="setting-group">
-                        <h3>Library</h3>
-                        <div class="setting-item">
-                            <label>Library Size Limit (GB)</label>
-                            <input type="number" min="0.5" max="100" step="0.5" value="2">
-                        </div>
-                    </div>
-                    <div class="setting-group">
-                        <h3>Interface</h3>
-                        <div class="setting-item">
-                            <label>Theme</label>
-                            <select>
-                                <option value="dark">Dark</option>
-                                <option value="light">Light</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+    updateNavigationButtons() {
+        this.prevBtn.disabled = this.currentIndex === 0;
+        this.nextBtn.disabled = this.currentIndex === this.images.length - 1;
     }
 
-    async loadTagsList() {
-        const tagsList = document.getElementById('tags-list');
-
-        // Clear existing content
-        tagsList.innerHTML = '';
-
-        if (!this.tags || this.tags.length === 0) {
-            const emptyMessage = document.createElement('p');
-            emptyMessage.className = 'empty-message';
-            emptyMessage.textContent = 'No tags yet. Create your first tag to organize your images.';
-            tagsList.appendChild(emptyMessage);
+    handleKeydown(e) {
+        // Global shortcuts
+        if (e.ctrlKey && e.key === 'd') {
+            e.preventDefault();
+            console.log('🔍 DEBUG: Exporting debug logs...');
+            this.exportDebugLogs();
             return;
         }
 
-        // Create tag items safely using DOM API
-        const fragment = document.createDocumentFragment();
-        for (const tag of this.tags) {
-            const tagItem = document.createElement('div');
-            tagItem.className = 'tag-item';
-            tagItem.style.borderLeftColor = tag.color || '#007acc';
+        if (!this.isFullscreen) return;
 
-            const tagInfo = document.createElement('div');
-            tagInfo.className = 'tag-info';
-
-            const tagName = document.createElement('span');
-            tagName.className = 'tag-name';
-            tagName.textContent = tag.name; // Safe: textContent prevents XSS
-
-            const tagCategory = document.createElement('span');
-            tagCategory.className = 'tag-category';
-            tagCategory.textContent = tag.category; // Safe: textContent prevents XSS
-
-            tagInfo.appendChild(tagName);
-            tagInfo.appendChild(tagCategory);
-
-            const tagStats = document.createElement('div');
-            tagStats.className = 'tag-stats';
-
-            const tagCount = document.createElement('span');
-            tagCount.className = 'tag-count';
-            tagCount.textContent = `${tag.usage_count || 0} images`; // Safe: textContent prevents XSS
-
-            tagStats.appendChild(tagCount);
-
-            tagItem.appendChild(tagInfo);
-            tagItem.appendChild(tagStats);
-            fragment.appendChild(tagItem);
-        }
-
-        tagsList.appendChild(fragment);
-    }
-
-    // Import methods (placeholders for now)
-    async importFromArchive() {
-        this.updateStatus('Archive import not yet implemented');
-    }
-
-    async importFromUrl() {
-        this.updateStatus('URL import not yet implemented');
-    }
-
-    async importFromDirectory() {
-        this.updateStatus('Directory import not yet implemented');
-    }
-
-    handleSearch(query) {
-        // TODO: Implement search functionality
-        console.log('Search query:', query);
-    }
-
-    updateStatus(text) {
-        const statusText = document.getElementById('status-text');
-        if (statusText) {
-            statusText.textContent = text;
+        switch (e.key) {
+            case 'ArrowLeft':
+                e.preventDefault();
+                this.showPrevious();
+                break;
+            case 'ArrowRight':
+                e.preventDefault();
+                this.showNext();
+                break;
+            case 'Escape':
+                e.preventDefault();
+                this.closeFullscreen();
+                break;
         }
     }
 
-    updateStats(count) {
-        const statsText = document.getElementById('stats-text');
-        if (statsText) {
-            statsText.textContent = `${count} image${count !== 1 ? 's' : ''}`;
-        }
+    showLoading() {
+        this.loadingIndicator.classList.remove('hidden');
+        this.loadingProgress.classList.add('hidden');
+        this.loadingText.textContent = 'Loading images...';
     }
 
-    showError(message) {
-        // Create a proper error dialog instead of using alert()
-        const errorDialog = document.createElement('div');
-        Object.assign(errorDialog.style, {
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: '#2d2d2d',
-            color: '#ffffff',
-            padding: '20px',
-            borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-            zIndex: '10000',
-            maxWidth: '400px',
-            fontFamily: 'Arial, sans-serif'
-        });
+    hideLoading() {
+        this.loadingIndicator.classList.add('hidden');
+    }
 
-        // Create dialog content safely using DOM API
-        const headerDiv = document.createElement('div');
-        Object.assign(headerDiv.style, {
-            display: 'flex',
-            alignItems: 'center',
-            marginBottom: '15px'
-        });
+    updateProgress(current, total) {
+        if (!this.loadingProgress || !this.progressFill || !this.progressText) return;
 
-        const warningSpan = document.createElement('span');
-        Object.assign(warningSpan.style, {
-            color: '#ff6b6b',
-            fontSize: '20px',
-            marginRight: '10px'
-        });
-        warningSpan.textContent = '⚠️';
+        this.loadingProgress.classList.remove('hidden');
+        const percentage = total > 0 ? (current / total) * 100 : 0;
+        this.progressFill.style.width = `${percentage}%`;
+        this.progressText.textContent = `${current} / ${total}`;
+        this.loadingText.textContent = `Loading images... (${current}/${total})`;
+    }
 
-        const titleStrong = document.createElement('strong');
-        titleStrong.textContent = 'Error';
+    hideDropZone() {
+        this.dropZone.classList.add('hidden');
+        this.galleryGrid.classList.remove('hidden');
+    }
 
-        headerDiv.appendChild(warningSpan);
-        headerDiv.appendChild(titleStrong);
-
-        const messageP = document.createElement('p');
-        Object.assign(messageP.style, {
-            margin: '0 0 20px 0',
-            lineHeight: '1.4'
-        });
-        messageP.textContent = message; // Safe: textContent prevents XSS
-
-        const okBtn = document.createElement('button');
-        Object.assign(okBtn.style, {
-            background: '#007acc',
-            color: 'white',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            float: 'right'
-        });
-        okBtn.textContent = 'OK';
-
-        errorDialog.appendChild(headerDiv);
-        errorDialog.appendChild(messageP);
-        errorDialog.appendChild(okBtn);
-
-        document.body.appendChild(errorDialog);
-
-        if (okBtn) {
-            okBtn.addEventListener('click', () => {
-                document.body.removeChild(errorDialog);
-            });
-        }
-
-        // Auto-remove after 10 seconds
-        setTimeout(() => {
-            if (document.body.contains(errorDialog)) {
-                document.body.removeChild(errorDialog);
-            }
-        }, 10000);
+    showDropZone() {
+        this.dropZone.classList.remove('hidden');
+        this.galleryGrid.classList.add('hidden');
     }
 }
 
-// Initialize the application when DOM is ready
+// Initialize the gallery when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new ImageGalleryManager();
+    window.gallery = new ImageGallery();
 });
 
-// Export for debugging
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = ImageGalleryManager;
-}
+// Handle window resize for responsive grid
+window.addEventListener('resize', () => {
+    // Gallery will automatically adjust via CSS grid
+    // Could add more sophisticated responsive logic here if needed
+});

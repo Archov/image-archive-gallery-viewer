@@ -22,7 +22,7 @@ yarn-debug.log*
 .eslintcache
 .vscode/
 .cursor/
-
+temp/
 # Environment variables
 .env
 image-gallery.code-workspace
