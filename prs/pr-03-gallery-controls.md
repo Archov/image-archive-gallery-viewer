@@ -1,4 +1,4 @@
-# PR 2: Gallery Controls & Enhanced Navigation
+# PR 3: Gallery Controls & Enhanced Navigation
 
 ## 🎯 **Overview**
 Add interactive gallery controls and enhanced navigation features to provide user control over the viewing experience.

@@ -1,4 +1,4 @@
-# PR 16: Bulk Tag Operations
+# PR 13: Bulk Tag Operations
 
 ## 🎯 **Overview**
 Add mass tag assignment and bulk editing capabilities.

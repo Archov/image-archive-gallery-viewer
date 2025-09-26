@@ -1,4 +1,4 @@
-# PR 3: Distraction-Free UI & Immersive Experience
+# PR 4: Distraction-Free UI & Immersive Experience
 
 ## 🎯 **Overview**
 Implement distraction-free UI with auto-hiding controls and immersive viewing experience.

@@ -33,32 +33,30 @@ Each PR file contains:
 
 ## 🚀 **Complete Development Sequence**
 
-**Phase 1: Core Gallery Foundation (PRs 1-4)**
+**Phase 1: Core Gallery Foundation (PRs 1-5)**
 1. `pr-01-image-file-management.md` - Core full-quality gallery with basic navigation
-2. `pr-02-gallery-controls.md` - Interactive controls and enhanced navigation
-3. `pr-03-distraction-free-ui.md` - Immersive viewing experience
-4. `pr-04-advanced-performance.md` - Memory management and optimization
+2. `pr-02-archive-ingestion.md` - Archive file processing (ZIP/RAR/7Z) ⭐ **CORE FEATURE**
+3. `pr-03-gallery-controls.md` - Interactive controls and enhanced navigation
+4. `pr-04-distraction-free-ui.md` - Immersive viewing experience
+5. `pr-05-advanced-performance.md` - Memory management and optimization
 
-**Phase 2: Ingestion Systems (PRs 5-9)**
-5. `pr-05-url-based-ingestion.md` - URL-based image downloading
-6. `pr-06-set-management.md` - Image grouping and organization
-7. `pr-07-advanced-gallery-features.md` - Enhanced gallery UX and features
-8. `pr-08-custom-protocol-handler.md` - Browser integration
-9. `pr-09-web-page-extractors.md` - Web page image extraction
+**Phase 2: Ingestion Systems (PRs 6-10)**
+6. `pr-06-url-based-ingestion.md` - URL-based image downloading
+7. `pr-07-set-management.md` - Image grouping and organization
+8. `pr-08-advanced-gallery-features.md` - Enhanced gallery UX and features
+9. `pr-09-custom-protocol-handler.md` - Browser integration
+10. `pr-10-web-page-extractors.md` - Web page image extraction
 
-**Phase 3: Archive Processing (PR 10)**
-10. `pr-14-archive-ingestion.md` - Archive file processing (ZIP/RAR/7Z)
+**Phase 3: Metadata & Organization (PRs 11-14)**
+11. `pr-11-cbxtools-integration.md` - Image compression optimization
+12. `pr-12-tag-system-foundation.md` - Basic tagging system
+13. `pr-13-bulk-tag-operations.md` - Mass tag editing capabilities
+14. `pr-17-basic-query-system.md` - Tag-based filtering and search
 
-**Phase 4: Metadata & Organization (PRs 11-13)**
-11. `pr-10-cbxtools-integration.md` - Image compression optimization
-12. `pr-15-tag-system-foundation.md` - Basic tagging system
-13. `pr-16-bulk-tag-operations.md` - Mass tag editing capabilities
-
-**Phase 5: Advanced Features (PRs 14-17)**
-14. `pr-11-import-export-system.md` - Data import/export functionality
-15. `pr-12-performance-optimization.md` - Large library performance tuning
-16. `pr-13-advanced-features.md` - Final polish and advanced capabilities
-17. `pr-17-basic-query-system.md` - Tag-based filtering and search
+**Phase 4: Advanced Features (PRs 15-17)**
+15. `pr-14-import-export-system.md` - Data import/export functionality
+16. `pr-15-performance-optimization.md` - Large library performance tuning
+17. `pr-16-advanced-features.md` - Final polish and advanced capabilities
 
 ## ✅ **Completion Criteria**
 

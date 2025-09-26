@@ -1,4 +1,4 @@
-# PR 14: Archive Ingestion System
+# PR 2: Archive Ingestion System
 
 ## 🎯 **Overview**
 Implement archive file processing and batch ingestion with progress tracking and metadata extraction.
