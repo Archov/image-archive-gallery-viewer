@@ -1,1084 +1,601 @@
-import { state } from './state.js';
+// Image Gallery Manager - Renderer Process Entry Point
+// This is a temporary bootstrap that will be replaced with a modern framework (React/Vue/Svelte)
 
-import { getElements } from './elements.js';
+class ImageGalleryManager {
+    constructor() {
+        this.initialized = false;
+        this.currentView = 'loading';
 
-import { electron } from './electron.js';
-
-import { createStatusUI } from './ui/status.js';
-
-import { createGalleryController } from './controllers/galleryController.js';
-
-import { createArchiveController } from './controllers/archiveController.js';
-
-import {
-
-  getArchiveIdFromUrl,
-
-  isArchiveFile
-
-} from './utils.js';
-
-let elements;
-
-let ui;
-
-let gallery;
-
-let archive;
-
-let draggedElement = null;
-
-const historyController = {
-
-  async refreshHistory({ highlightUrl, selectId } = {}) {
-
-    try {
-
-      const history = await electron.loadHistory();
-
-      state.historyItems = history;
-
-      archive.registerHistoryItems(history);
-
-      if (!selectId && highlightUrl) {
-
-        const target = history.find(item => item.url === highlightUrl);
-
-        if (target) {
-
-          selectId = target.id;
-
-        }
-
-      }
-
-      const loadedHistoryIds = history
-
-        .filter(item => state.loadedArchiveIds.has(getArchiveIdFromUrl(item.url)))
-
-        .map(item => item.id);
-
-      // Preserve existing selections and add newly loaded items
-      const nextSelected = new Set(state.selectedHistoryItems);
-      
-      // Add all loaded archive IDs to selections
-      loadedHistoryIds.forEach(id => nextSelected.add(id));
-
-      if (selectId) {
-
-        nextSelected.add(selectId);
-
-      }
-
-      state.selectedHistoryItems = nextSelected;
-
-      renderHistory(history, { highlightUrl, selectId });
-
-    } catch (error) {
-
-      console.error('Failed to load history:', error);
-
+        this.init();
     }
 
-  }
-
-};
-
-function toggleHistoryPanel() {
-  if (elements.historyPanel.classList.contains('open')) {
-    closeHistoryPanel();
-  } else {
-    elements.historyPanel.classList.add('open');
-    closeSettingsPanel();
-  }
-}
-
-function toggleSettingsPanel() {
-  if (elements.settingsPanel.classList.contains('open')) {
-    closeSettingsPanel();
-  } else {
-    elements.settingsPanel.classList.add('open');
-    closeHistoryPanel();
-  }
-}
-
-function closeHistoryPanel() {
-  elements.historyPanel.classList.remove('open');
-}
-
-function closeSettingsPanel() {
-  elements.settingsPanel.classList.remove('open');
-}
-
-function handleGlobalKeydown(event) {
-  if (event.key === 'Escape') {
-    closeHistoryPanel();
-    closeSettingsPanel();
-  }
-}
-
-function handleDocumentClick(event) {
-  if (!elements.historyPanel.classList.contains('open')) {
-    return;
-  }
-
-  const target = event.target;
-  if (elements.historyPanel.contains(target)) {
-    return;
-  }
-  if (elements.historyBtn.contains(target)) {
-    return;
-  }
-  if (elements.settingsPanel.contains(target)) {
-    return;
-  }
-  if (elements.settingsBtn.contains(target)) {
-    return;
-  }
-  closeHistoryPanel();
-}
-
-async function loadSettings() {
-
-  try {
-
-    const settings = await electron.loadSettings();
-
-    state.settings = { ...state.settings, ...settings };
-
-    const size =
-      Number.isFinite(state.settings.librarySize) ? state.settings.librarySize :
-      Number.isFinite(state.settings.cacheSize) ? state.settings.cacheSize : 2;
-    state.settings.librarySize = size;
-    elements.librarySizeSelect.value = String(size);
-
-    elements.autoLoadFromClipboardSelect.value = String(state.settings.autoLoadFromClipboard);
-
-    elements.maxHistoryItemsSelect.value = state.settings.maxHistoryItems;
-
-    elements.allowFullscreenUpscalingSelect.value = String(state.settings.allowFullscreenUpscaling);
-
-    elements.autoLoadAdjacentArchivesSelect.value = String(state.settings.autoLoadAdjacentArchives);
-
-    gallery.updateZoomSliderMax();
-
-    gallery.updateFullscreenUpscaling();
-
-  } catch (error) {
-
-    console.error('Failed to load settings:', error);
-
-  }
-
-}
-
-async function saveSettings() {
-
-  state.settings.librarySize = parseFloat(elements.librarySizeSelect.value);
-
-  state.settings.autoLoadFromClipboard = elements.autoLoadFromClipboardSelect.value === 'true';
-
-  state.settings.maxHistoryItems = parseInt(elements.maxHistoryItemsSelect.value, 10);
-
-  state.settings.allowFullscreenUpscaling = elements.allowFullscreenUpscalingSelect.value === 'true';
-
-  state.settings.autoLoadAdjacentArchives = elements.autoLoadAdjacentArchivesSelect.value === 'true';
-
-  try {
-
-    await electron.saveSettings(state.settings);
-
-    gallery.updateZoomSliderMax();
-
-    gallery.updateFullscreenUpscaling();
-
-  } catch (error) {
-
-    console.error('Failed to save settings:', error);
-
-  }
-
-}
-
-async function applyClipboardAutoload() {
-
-  if (!state.settings.autoLoadFromClipboard || !navigator.clipboard) return;
-
-  try {
-
-    const text = await navigator.clipboard.readText();
-
-    if (text && isSupportedArchiveUrl(text)) {
-
-      elements.urlInput.value = text;
-
-      ui.updateStatus('Archive URL detected from clipboard');
-
-    }
-
-  } catch (error) {
-
-    // Clipboard access denied or unavailable – ignore quietly.
-
-  }
-
-}
-
-function isSupportedArchiveUrl(url) {
-
-  return /\.(zip|rar|7z)($|\?|#)/i.test(url)
-
-    || (url.includes('.bin?') && /f=[^&]*\.(zip|rar|7z)/i.test(url));
-
-}
-
-function renderHistory(history, { highlightUrl, selectId } = {}) {
-
-  elements.historyList.innerHTML = '';
-
-  history.forEach(item => {
-
-    const historyItem = document.createElement('div');
-
-    historyItem.className = 'history-item';
-
-    historyItem.draggable = !state.isRenaming;
-
-    historyItem.dataset.historyId = item.id;
-
-    const itemArchiveId = getArchiveIdFromUrl(item.url);
-
-    const isLoaded = state.loadedArchiveIds.has(itemArchiveId);
-
-    const isChecked = state.selectedHistoryItems.has(item.id);
-
-    if (isLoaded) {
-
-      historyItem.classList.add('current-archive');
-
-    }
-
-    if (highlightUrl && item.url === highlightUrl) {
-
-      historyItem.classList.add('active');
-
-    }
-
-    const checkbox = document.createElement('div');
-
-    checkbox.className = `history-checkbox ${isChecked ? 'checked' : ''}`;
-
-    checkbox.title = isLoaded ? 'Click to unload this archive' : 'Click to load this archive';
-
-    checkbox.addEventListener('click', (event) => {
-      event.stopPropagation();
-      toggleHistorySelection(item).catch(error => console.error('Failed to toggle history selection:', error));
-    });
-
-    // Drag handle
-
-    const dragHandle = document.createElement('div');
-
-    dragHandle.className = 'history-drag-handle';
-
-    dragHandle.title = 'Drag to reorder';
-
-    // Star toggle
-
-    const star = document.createElement('div');
-
-    star.className = `history-item-star ${item.starred ? 'starred' : ''}`;
-
-    star.innerHTML = item.starred ? '★' : '☆';
-
-    star.title = item.starred ? 'Remove from favorites' : 'Add to favorites';
-
-    star.addEventListener('click', async (event) => {
-
-      event.stopPropagation();
-
-      await toggleHistoryStar(item.id);
-
-    });
-
-    // Info block
-
-    const info = document.createElement('div');
-
-    info.className = 'history-item-info';
-
-    const name = document.createElement('div');
-
-    name.className = 'history-item-name';
-
-    name.textContent = item.name;
-
-    const details = document.createElement('div');
-
-    details.className = 'history-item-details';
-
-    const imageLabel = item.imageCount === 1 ? 'image' : 'images';
-
-    const dateLabel = new Date(item.lastAccessed).toLocaleDateString();
-
-    details.textContent = `${item.imageCount} ${imageLabel} • ${dateLabel}`;
-
-    const renameBtn = document.createElement('button');
-
-    renameBtn.className = 'history-item-rename';
-
-    renameBtn.textContent = '✎';
-
-    renameBtn.title = 'Rename';
-
-    renameBtn.addEventListener('click', (event) => {
-
-      event.stopPropagation();
-
-      startRenameMode(historyItem, item);
-
-    });
-
-    info.appendChild(name);
-
-    info.appendChild(details);
-
-    historyItem.appendChild(checkbox);
-
-    historyItem.appendChild(dragHandle);
-
-    historyItem.appendChild(star);
-
-    historyItem.appendChild(info);
-
-    historyItem.appendChild(renameBtn);
-
-    info.style.cursor = 'pointer';
-
-    info.addEventListener('click', () => {
-
-      archive.loadFromHistory(item);
-
-    });
-
-    historyItem.addEventListener('dragstart', handleDragStart);
-
-    historyItem.addEventListener('dragend', handleDragEnd);
-
-    historyItem.addEventListener('dragover', handleDragOver);
-
-    historyItem.addEventListener('drop', handleDrop);
-
-    elements.historyList.appendChild(historyItem);
-
-  });
-
-  updateClearSelectedButton();
-
-}
-
-function startRenameMode(historyItem, item) {
-
-  state.isRenaming = true;
-
-  const nameEl = historyItem.querySelector('.history-item-name');
-
-  const detailsEl = historyItem.querySelector('.history-item-details');
-
-  const renameBtn = historyItem.querySelector('.history-item-rename');
-
-  const info = historyItem.querySelector('.history-item-info');
-
-  nameEl.style.display = 'none';
-
-  detailsEl.style.display = 'none';
-
-  renameBtn.style.display = 'none';
-
-  const input = document.createElement('input');
-
-  input.className = 'history-rename-input';
-
-  input.type = 'text';
-
-  input.value = item.name;
-
-  const saveBtn = document.createElement('button');
-
-  saveBtn.className = 'history-item-rename';
-
-  saveBtn.textContent = '✔';
-
-  const cancelBtn = document.createElement('button');
-
-  cancelBtn.className = 'history-item-rename';
-
-  cancelBtn.textContent = '✖';
-
-  const cleanup = () => exitRenameMode(historyItem, nameEl, detailsEl, renameBtn, input, saveBtn, cancelBtn);
-
-  saveBtn.addEventListener('click', async () => {
-
-    const newName = input.value.trim();
-
-    if (newName && newName !== item.name) {
-
-      try {
-
-        const success = await electron.renameHistoryItem(item.id, newName);
-
-        if (success) {
-
-          await historyController.refreshHistory({ selectId: item.id });
-
-          ui.updateStatus(`Renamed "${item.name}" to "${newName}"`);
-
-        } else {
-
-          ui.updateStatus('Failed to rename item', true);
-
-        }
-
-      } catch (error) {
-
-        console.error('Failed to rename:', error);
-
-        ui.updateStatus('Failed to rename item', true);
-
-      }
-
-    }
-
-    cleanup();
-
-  });
-
-  cancelBtn.addEventListener('click', cleanup);
-
-  input.addEventListener('keydown', (event) => {
-
-    if (event.key === 'Enter') {
-
-      saveBtn.click();
-
-    } else if (event.key === 'Escape') {
-
-      cancelBtn.click();
-
-    }
-
-  });
-
-  info.innerHTML = '';
-
-  info.appendChild(input);
-
-  info.appendChild(saveBtn);
-
-  info.appendChild(cancelBtn);
-
-  setTimeout(() => input.focus(), 10);
-
-}
-
-function exitRenameMode(historyItem, nameEl, detailsEl, renameBtn, input, saveBtn, cancelBtn) {
-
-  state.isRenaming = false;
-
-  const info = historyItem.querySelector('.history-item-info');
-
-  info.innerHTML = '';
-
-  info.appendChild(nameEl);
-
-  info.appendChild(detailsEl);
-
-  nameEl.style.display = '';
-
-  detailsEl.style.display = '';
-
-  renameBtn.style.display = '';
-
-}
-
-function handleDragStart(event) {
-
-  if (state.isRenaming) {
-
-    event.preventDefault();
-
-    return;
-
-  }
-
-  draggedElement = event.currentTarget;
-
-  draggedElement.classList.add('dragging');
-
-  event.dataTransfer.effectAllowed = 'move';
-
-  event.dataTransfer.setData('text/plain', draggedElement.dataset.historyId);
-
-}
-
-function handleDragEnd(event) {
-
-  if (state.isRenaming) return;
-
-  event.currentTarget.classList.remove('dragging');
-
-  elements.historyList.querySelectorAll('.history-item').forEach(item => {
-
-    item.classList.remove('drag-over');
-
-  });
-
-  draggedElement = null;
-
-}
-
-function handleDragOver(event) {
-
-  if (state.isRenaming) return;
-
-  event.preventDefault();
-
-  const target = event.target.closest('.history-item');
-
-  if (target && target !== draggedElement) {
-
-    elements.historyList.querySelectorAll('.history-item').forEach(item => item.classList.remove('drag-over'));
-
-    target.classList.add('drag-over');
-
-  }
-
-}
-
-async function handleDrop(event) {
-
-  if (state.isRenaming) return;
-
-  event.preventDefault();
-
-  const target = event.target.closest('.history-item');
-
-  if (!target || target === draggedElement) return;
-
-  const items = Array.from(elements.historyList.children);
-
-  const draggedIndex = items.indexOf(draggedElement);
-
-  const targetIndex = items.indexOf(target);
-
-  if (draggedIndex < targetIndex) {
-
-    target.parentNode.insertBefore(draggedElement, target.nextSibling);
-
-  } else {
-
-    target.parentNode.insertBefore(draggedElement, target);
-
-  }
-
-  const newOrder = Array.from(elements.historyList.children).map(item => item.dataset.historyId);
-
-  try {
-
-    const success = await electron.reorderHistory(newOrder);
-
-    if (success) {
-
-      ui.updateStatus('History reordered successfully');
-
-      await historyController.refreshHistory();
-
-    } else {
-
-      throw new Error('Backend reported failure');
-
-    }
-
-  } catch (error) {
-
-    console.error('Failed to reorder history:', error);
-
-    ui.updateStatus('Failed to reorder history', true);
-
-    await historyController.refreshHistory();
-
-  }
-
-}
-
-async function toggleHistorySelection(historyItem) {
-
-  const archiveId = getArchiveIdFromUrl(historyItem.url);
-
-  const isLoaded = state.loadedArchiveIds.has(archiveId);
-
-  if (isLoaded) {
-
-    await archive.unloadArchiveFromCollection(historyItem);
-
-    ui.updateStatus(`Removed ${historyItem.name} from the gallery`);
-
-  } else {
-
-    await archive.loadSingleArchiveToCollection(historyItem);
-
-  }
-
-  updateClearSelectedButton();
-
-}
-
-function updateClearSelectedButton() {
-
-  const count = state.loadedArchiveIds.size;
-
-  if (!elements.clearSelectedBtn) return;
-
-  if (count === 0) {
-
-    elements.clearSelectedBtn.disabled = true;
-
-    elements.clearSelectedBtn.textContent = 'Clear Selected';
-
-  } else {
-
-    elements.clearSelectedBtn.disabled = false;
-
-    elements.clearSelectedBtn.textContent = `Clear Selected (${count})`;
-
-  }
-
-}
-
-async function toggleHistoryStar(historyId) {
-
-  try {
-
-    await electron.toggleHistoryStar(historyId);
-
-    await historyController.refreshHistory();
-
-    await archive.updateLibraryInfo();
-
-  } catch (error) {
-
-    console.error('Failed to toggle history star:', error);
-
-  }
-
-}
-
-async function clearHistory() {
-
-  if (!elements.clearHistoryBtn) return;
-
-  try {
-
-    await electron.clearHistory();
-
-    state.selectedHistoryItems.clear();
-
-    await historyController.refreshHistory();
-
-    ui.updateStatus('Cleared history');
-
-  } catch (error) {
-
-    console.error('Failed to clear history:', error);
-
-    ui.updateStatus('Failed to clear history', true);
-
-  }
-
-}
-
-async function clearSelectedArchives() {
-
-  if (state.loadedArchiveIds.size === 0) {
-
-    updateClearSelectedButton();
-
-    ui.updateStatus('No loaded archives to clear');
-
-    return;
-
-  }
-
-  const idsToUnload = Array.from(state.loadedArchiveIds);
-
-  for (const archiveId of idsToUnload) {
-
-    const item = state.historyItems.find(entry => getArchiveIdFromUrl(entry.url) === archiveId);
-
-    if (item) {
-
-      await archive.unloadArchiveFromCollection(item);
-
-    }
-
-  }
-
-  updateClearSelectedButton();
-
-  ui.updateStatus('Cleared selected archives');
-
-}
-
-async function selectAllHistory() {
-
-  const itemsToLoad = state.historyItems.filter(item => !state.loadedArchiveIds.has(getArchiveIdFromUrl(item.url)));
-
-  if (itemsToLoad.length === 0) {
-
-    updateClearSelectedButton();
-
-    ui.updateStatus('All archives are already loaded');
-
-    return;
-
-  }
-
-  for (const item of itemsToLoad) {
-
-    await archive.loadSingleArchiveToCollection(item);
-
-  }
-
-  updateClearSelectedButton();
-
-}
-
-async function selectNoneHistory() {
-
-  await clearSelectedArchives();
-
-}
-
-async function clearLibrary() {
-
-  if (!confirm('Clear non-starred library? Starred items will be preserved.')) return;
-
-  try {
-
-    await electron.clearLibrary();
-
-    await archive.updateLibraryInfo();
-
-    ui.updateStatus('Non-starred library cleared');
-
-  } catch (error) {
-
-    console.error('Failed to clear library:', error);
-
-    ui.updateStatus('Failed to clear library', true);
-
-  }
-
-}
-
-async function createManualBackup() {
-
-  if (!elements.backupStatus) return;
-
-  elements.backupStatus.textContent = 'Creating backup...';
-
-  elements.backupStatus.style.color = '#4CAF50';
-
-  try {
-
-    await saveSettings(); // Triggers database save + backup on main process
-
-    elements.backupStatus.textContent = 'Backup created successfully!';
-
-  } catch (error) {
-
-    console.error('Failed to create backup:', error);
-
-    elements.backupStatus.textContent = 'Backup failed!';
-
-    elements.backupStatus.style.color = '#ff6b6b';
-
-  } finally {
-
-    setTimeout(() => {
-
-      elements.backupStatus.textContent = '';
-
-    }, 3000);
-
-  }
-
-}
-
-async function listAvailableBackups() {
-
-  try {
-
-    const backups = await electron.listBackups();
-
-    renderBackupList(backups);
-
-  } catch (error) {
-
-    console.error('Failed to list backups:', error);
-
-    ui.updateStatus('Failed to load backup list', true);
-
-  }
-
-}
-
-function renderBackupList(backups) {
-
-  if (!elements.backupList || !elements.backupItems) return;
-
-  elements.backupItems.innerHTML = '';
-
-  elements.backupList.style.display = 'block';
-
-  Object.entries(backups).forEach(([filename, entries]) => {
-
-    entries.forEach(entry => {
-
-      const item = document.createElement('div');
-
-      item.className = 'backup-item';
-
-      const info = document.createElement('div');
-
-      info.className = 'backup-info';
-
-      const fileLabel = document.createElement('div');
-
-      fileLabel.className = 'backup-filename';
-
-      fileLabel.textContent = filename;
-
-      const timeLabel = document.createElement('div');
-
-      timeLabel.className = 'backup-timestamp';
-
-      timeLabel.textContent = entry.timestamp.replace('T', ' ');
-
-      info.appendChild(fileLabel);
-
-      info.appendChild(timeLabel);
-
-      const restoreBtn = document.createElement('button');
-
-      restoreBtn.className = 'restore-btn';
-
-      restoreBtn.textContent = 'Restore';
-
-      restoreBtn.addEventListener('click', async () => {
-
-        await restoreFromBackup(filename, entry.timestamp);
-
-      });
-
-      item.appendChild(info);
-
-      item.appendChild(restoreBtn);
-
-      elements.backupItems.appendChild(item);
-
-    });
-
-  });
-
-}
-
-async function restoreFromBackup(filename, timestamp) {
-
-  try {
-
-    const success = await electron.restoreBackup(filename, timestamp);
-
-    if (success) {
-
-      await loadSettings();
-
-      await historyController.refreshHistory();
-
-      ui.updateStatus(`Restored backup ${filename}`);
-
-    } else {
-
-      throw new Error('Restore failed');
-
-    }
-
-  } catch (error) {
-
-    console.error('Failed to restore backup:', error);
-
-    ui.updateStatus('Failed to restore backup', true);
-
-  }
-
-}
-
-function setupDragAndDrop() {
-
-  document.addEventListener('dragover', (event) => event.preventDefault());
-
-  document.addEventListener('drop', async (event) => {
-
-    event.preventDefault();
-
-    const files = event.dataTransfer.files;
-
-    const text = event.dataTransfer.getData('text');
-
-    if (files.length > 0) {
-
-      const file = files[0];
-
-      if (isArchiveFile(file.name)) {
-
+    async init() {
         try {
+            // Update loading status
+            window.loadingUtils.updateStatus('Initializing application...');
 
-          closeHistoryPanel();
+            // Wait for electron API to be available
+            await this.waitForElectronAPI();
 
-          // Use the File object directly instead of file.path (which doesn't exist in browsers)
-          await archive.openLocalArchive(file, file.name);
+            // Initialize database connection
+            window.loadingUtils.updateStatus('Connecting to database...');
+            await this.initializeDatabase();
 
+            // Load settings
+            window.loadingUtils.updateStatus('Loading settings...');
+            await this.loadSettings();
+
+            // Initialize UI components
+            window.loadingUtils.updateStatus('Setting up interface...');
+            await this.initializeUI();
+
+            // Mark as initialized
+            this.initialized = true;
+
+            // Hide loading screen and show main interface
+            window.loadingUtils.hide();
+
+            console.log('Image Gallery Manager initialized successfully');
         } catch (error) {
+            console.error('Failed to initialize application:', error);
+            this.showError('Failed to initialize application: ' + error.message);
+        }
+    }
 
-          ui.updateStatus(`Error loading file: ${error.message}`, true);
+    async waitForElectronAPI() {
+        return new Promise((resolve) => {
+            const checkAPI = () => {
+                if (window.electronAPI) {
+                    resolve();
+                } else {
+                    setTimeout(checkAPI, 10);
+                }
+            };
+            checkAPI();
+        });
+    }
 
+    async initializeDatabase() {
+        const result = await window.electronAPI.db.init();
+        if (!result.success) {
+            throw new Error('Database initialization failed: ' + result.error);
+        }
+    }
+
+    async loadSettings() {
+        const result = await window.electronAPI.settings.get();
+        if (result.success) {
+            this.settings = result.data;
+        } else {
+            console.warn('Failed to load settings, using defaults');
+            this.settings = {};
+        }
+    }
+
+    async initializeUI() {
+        // Create main UI structure
+        this.createMainLayout();
+
+        // Initialize components
+        this.initializeHeader();
+        this.initializeSidebar();
+        this.initializeMainContent();
+        this.initializeStatusBar();
+
+        // Set up event listeners
+        this.setupEventListeners();
+
+        // Load initial data
+        await this.loadInitialData();
+    }
+
+    createMainLayout() {
+        const app = document.getElementById('app');
+
+        app.innerHTML = `
+            <div class="app-container">
+                <header class="app-header">
+                    <div class="header-left">
+                        <h1 class="app-title">Image Gallery Manager</h1>
+                    </div>
+                    <div class="header-center">
+                        <div class="search-container">
+                            <input type="text" class="search-input" placeholder="Search images, tags, artists...">
+                            <button class="search-button">🔍</button>
+                        </div>
+                    </div>
+                    <div class="header-right">
+                        <button class="header-button" id="settings-btn">⚙️</button>
+                        <button class="header-button" id="minimize-btn">−</button>
+                        <button class="header-button" id="maximize-btn">⬜</button>
+                        <button class="header-button" id="close-btn">✕</button>
+                    </div>
+                </header>
+
+                <div class="app-main">
+                    <aside class="sidebar">
+                        <nav class="sidebar-nav">
+                            <button class="nav-button active" data-view="gallery">
+                                🖼️ Gallery
+                            </button>
+                            <button class="nav-button" data-view="tags">
+                                🏷️ Tags
+                            </button>
+                            <button class="nav-button" data-view="sets">
+                                📁 Sets
+                            </button>
+                            <button class="nav-button" data-view="import">
+                                📥 Import
+                            </button>
+                            <button class="nav-button" data-view="settings">
+                                ⚙️ Settings
+                            </button>
+                        </nav>
+                    </aside>
+
+                    <main class="main-content">
+                        <div class="content-area" id="content-area">
+                            <!-- Content will be loaded here -->
+                        </div>
+                    </main>
+                </div>
+
+                <footer class="status-bar">
+                    <div class="status-left">
+                        <span id="status-text">Ready</span>
+                    </div>
+                    <div class="status-right">
+                        <span id="stats-text">0 images</span>
+                    </div>
+                </footer>
+            </div>
+        `;
+    }
+
+    initializeHeader() {
+        // Window controls - with error handling
+        const minimizeBtn = document.getElementById('minimize-btn');
+        const maximizeBtn = document.getElementById('maximize-btn');
+        const closeBtn = document.getElementById('close-btn');
+
+        if (minimizeBtn) {
+            minimizeBtn.addEventListener('click', () => {
+                window.electronAPI.window.minimize();
+            });
         }
 
-      } else {
+        if (maximizeBtn) {
+            maximizeBtn.addEventListener('click', () => {
+                window.electronAPI.window.maximize();
+            });
+        }
 
-        ui.updateStatus('Dropped file is not a supported archive format', true);
-
-      }
-
-    } else if (text && isSupportedArchiveUrl(text)) {
-
-      elements.urlInput.value = text;
-
-      ui.updateStatus('Archive URL dropped');
-
-      closeHistoryPanel();
-
-      archive.loadArchiveByUrl(text, { updateHistory: true, showLoadingOverlay: true });
-
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                window.electronAPI.window.close();
+            });
+        }
     }
 
-  });
+    initializeSidebar() {
+        // Navigation buttons
+        const navButtons = document.querySelectorAll('.nav-button');
 
-}
-
-function attachEventListeners() {
-
-  elements.loadBtn.addEventListener('click', () => archive.loadArchiveFromInput());
-
-  elements.urlInput.addEventListener('keypress', (event) => {
-
-    if (event.key === 'Enter') {
-
-      archive.loadArchiveFromInput();
-
+        navButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const view = e.target.dataset.view;
+                this.switchView(view);
+            });
+        });
     }
 
-  });
+    initializeMainContent() {
+        this.showGalleryView();
+    }
 
-  elements.historyBtn.addEventListener('click', toggleHistoryPanel);
+    initializeStatusBar() {
+        // Status bar is already created in HTML
+    }
 
-  elements.settingsBtn.addEventListener('click', toggleSettingsPanel);
+    setupEventListeners() {
+        // Search functionality
+        const searchInput = document.querySelector('.search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.handleSearch(e.target.value);
+            });
+        }
 
-  elements.librarySizeSelect.addEventListener('change', saveSettings);
+        // Import card event listeners
+        const archiveCard = document.querySelector('.import-archive-card');
+        const urlCard = document.querySelector('.import-url-card');
+        const directoryCard = document.querySelector('.import-directory-card');
 
-  elements.autoLoadFromClipboardSelect.addEventListener('change', saveSettings);
+        if (archiveCard) {
+            archiveCard.addEventListener('click', () => this.importFromArchive());
+        }
+        if (urlCard) {
+            urlCard.addEventListener('click', () => this.importFromUrl());
+        }
+        if (directoryCard) {
+            directoryCard.addEventListener('click', () => this.importFromDirectory());
+        }
 
-  elements.maxHistoryItemsSelect.addEventListener('change', saveSettings);
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch (e.key) {
+                    case 'f':
+                        e.preventDefault();
+                        if (searchInput) searchInput.focus();
+                        break;
+                    case 'k':
+                        if (e.shiftKey) {
+                            e.preventDefault();
+                            // TODO: Open command palette
+                        }
+                        break;
+                }
+            }
+        });
+    }
 
-  elements.allowFullscreenUpscalingSelect.addEventListener('change', saveSettings);
+    async loadInitialData() {
+        try {
+            // Load tags
+            const tagsResult = await window.electronAPI.tags.getAll();
+            if (tagsResult.success) {
+                this.tags = tagsResult.data;
+            } else {
+                console.error('Failed to load tags:', tagsResult.error);
+                this.showError('Failed to load tags. Some features may not work properly.');
+            }
 
-  elements.autoLoadAdjacentArchivesSelect.addEventListener('change', saveSettings);
+            // Load image count - Note: db.query removed for security, need to add specific IPC channel
+            // For now, we'll show 0 until we implement proper image counting
+            this.updateStats(0);
 
-  elements.clearHistoryBtn.addEventListener('click', clearHistory);
+            this.updateStatus('Ready');
+        } catch (error) {
+            console.error('Failed to load initial data:', error);
+            this.showError('Failed to load application data. Please restart the application.');
+        }
+    }
 
-  elements.clearSelectedBtn.addEventListener('click', () => {
-    clearSelectedArchives().catch(error => console.error('Failed to clear selected archives:', error));
-  });
-  elements.selectAllBtn.addEventListener('click', () => {
-    selectAllHistory().catch(error => console.error('Failed to load all archives:', error));
-  });
-  elements.selectNoneBtn.addEventListener('click', () => {
-    selectNoneHistory().catch(error => console.error('Failed to clear archives:', error));
-  });
+    switchView(view) {
+        // Update active navigation button
+        document.querySelectorAll('.nav-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-view="${view}"]`).classList.add('active');
 
-  elements.newArchiveBtn.addEventListener('click', () => {
+        // Switch content
+        switch (view) {
+            case 'gallery':
+                this.showGalleryView();
+                break;
+            case 'tags':
+                this.showTagsView();
+                break;
+            case 'sets':
+                this.showSetsView();
+                break;
+            case 'import':
+                this.showImportView();
+                break;
+            case 'settings':
+                this.showSettingsView();
+                break;
+        }
 
-    gallery.showWelcome();
+        // Keep currentView in sync
+        this.currentView = view;
+    }
 
-    ui.updateStatus('Ready');
+    showGalleryView() {
+        const contentArea = document.getElementById('content-area');
+        contentArea.innerHTML = `
+            <div class="gallery-view">
+                <div class="gallery-controls">
+                    <div class="control-group">
+                        <label>Sort by:</label>
+                        <select class="control-select">
+                            <option value="date-desc">Newest First</option>
+                            <option value="date-asc">Oldest First</option>
+                            <option value="name">Name</option>
+                            <option value="artist">Artist</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>View:</label>
+                        <select class="control-select">
+                            <option value="grid">Grid</option>
+                            <option value="list">List</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="gallery-grid" id="gallery-grid">
+                    <div class="empty-state">
+                        <div class="empty-icon">🖼️</div>
+                        <h3>No Images Yet</h3>
+                        <p>Import some images to get started</p>
+                        <button class="primary-button" id="import-images-btn">Import Images</button>
+                    </div>
+                </div>
+            </div>
+        `;
 
-  });
+        // Add event listener for import button (consistent with other event handling)
+        const importBtn = document.getElementById('import-images-btn');
+        if (importBtn) {
+            importBtn.addEventListener('click', () => this.switchView('import'));
+        }
+    }
 
-  elements.backupDatabaseBtn.addEventListener('click', createManualBackup);
+    showTagsView() {
+        const contentArea = document.getElementById('content-area');
+        contentArea.innerHTML = `
+            <div class="tags-view">
+                <div class="tags-header">
+                    <h2>Tag Management</h2>
+                    <button class="primary-button" id="add-tag-btn">Add Tag</button>
+                </div>
+                <div class="tags-list" id="tags-list">
+                    <!-- Tags will be loaded here -->
+                </div>
+            </div>
+        `;
 
-  elements.listBackupsBtn.addEventListener('click', listAvailableBackups);
+        this.loadTagsList();
+    }
 
-  elements.clearLibraryBtn.addEventListener('click', clearLibrary);
+    showSetsView() {
+        const contentArea = document.getElementById('content-area');
+        contentArea.innerHTML = `
+            <div class="sets-view">
+                <div class="sets-header">
+                    <h2>Image Sets</h2>
+                    <button class="primary-button">Create Set</button>
+                </div>
+                <div class="sets-grid" id="sets-grid">
+                    <div class="empty-state">
+                        <div class="empty-icon">📁</div>
+                        <h3>No Sets Yet</h3>
+                        <p>Create sets to group related images</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 
-  const scrollHandler = gallery.getScrollHandler();
+    showImportView() {
+        const contentArea = document.getElementById('content-area');
+        contentArea.innerHTML = `
+            <div class="import-view">
+                <div class="import-header">
+                    <h2>Import Images</h2>
+                </div>
+                <div class="import-options">
+                    <div class="import-card import-archive-card">
+                        <div class="card-icon">📦</div>
+                        <h3>From Archive</h3>
+                        <p>Import images from ZIP, RAR, or 7Z files</p>
+                    </div>
+                    <div class="import-card import-url-card">
+                        <div class="card-icon">🌐</div>
+                        <h3>From URL</h3>
+                        <p>Download and import from web URLs</p>
+                    </div>
+                    <div class="import-card import-directory-card">
+                        <div class="card-icon">📁</div>
+                        <h3>From Directory</h3>
+                        <p>Import images from local folders</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 
-  elements.galleryGrid.addEventListener('scroll', scrollHandler);
+    showSettingsView() {
+        const contentArea = document.getElementById('content-area');
+        contentArea.innerHTML = `
+            <div class="settings-view">
+                <div class="settings-header">
+                    <h2>Settings</h2>
+                </div>
+                <div class="settings-content">
+                    <div class="setting-group">
+                        <h3>Library</h3>
+                        <div class="setting-item">
+                            <label>Library Size Limit (GB)</label>
+                            <input type="number" min="0.5" max="100" step="0.5" value="2">
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <h3>Interface</h3>
+                        <div class="setting-item">
+                            <label>Theme</label>
+                            <select>
+                                <option value="dark">Dark</option>
+                                <option value="light">Light</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 
+    async loadTagsList() {
+        const tagsList = document.getElementById('tags-list');
+
+        // Clear existing content
+        tagsList.innerHTML = '';
+
+        if (!this.tags || this.tags.length === 0) {
+            const emptyMessage = document.createElement('p');
+            emptyMessage.className = 'empty-message';
+            emptyMessage.textContent = 'No tags yet. Create your first tag to organize your images.';
+            tagsList.appendChild(emptyMessage);
+            return;
+        }
+
+        // Create tag items safely using DOM API
+        const fragment = document.createDocumentFragment();
+        for (const tag of this.tags) {
+            const tagItem = document.createElement('div');
+            tagItem.className = 'tag-item';
+            tagItem.style.borderLeftColor = tag.color || '#007acc';
+
+            const tagInfo = document.createElement('div');
+            tagInfo.className = 'tag-info';
+
+            const tagName = document.createElement('span');
+            tagName.className = 'tag-name';
+            tagName.textContent = tag.name; // Safe: textContent prevents XSS
+
+            const tagCategory = document.createElement('span');
+            tagCategory.className = 'tag-category';
+            tagCategory.textContent = tag.category; // Safe: textContent prevents XSS
+
+            tagInfo.appendChild(tagName);
+            tagInfo.appendChild(tagCategory);
+
+            const tagStats = document.createElement('div');
+            tagStats.className = 'tag-stats';
+
+            const tagCount = document.createElement('span');
+            tagCount.className = 'tag-count';
+            tagCount.textContent = `${tag.usage_count || 0} images`; // Safe: textContent prevents XSS
+
+            tagStats.appendChild(tagCount);
+
+            tagItem.appendChild(tagInfo);
+            tagItem.appendChild(tagStats);
+            fragment.appendChild(tagItem);
+        }
+
+        tagsList.appendChild(fragment);
+    }
+
+    // Import methods (placeholders for now)
+    async importFromArchive() {
+        this.updateStatus('Archive import not yet implemented');
+    }
+
+    async importFromUrl() {
+        this.updateStatus('URL import not yet implemented');
+    }
+
+    async importFromDirectory() {
+        this.updateStatus('Directory import not yet implemented');
+    }
+
+    handleSearch(query) {
+        // TODO: Implement search functionality
+        console.log('Search query:', query);
+    }
+
+    updateStatus(text) {
+        const statusText = document.getElementById('status-text');
+        if (statusText) {
+            statusText.textContent = text;
+        }
+    }
+
+    updateStats(count) {
+        const statsText = document.getElementById('stats-text');
+        if (statsText) {
+            statsText.textContent = `${count} image${count !== 1 ? 's' : ''}`;
+        }
+    }
+
+    showError(message) {
+        // Create a proper error dialog instead of using alert()
+        const errorDialog = document.createElement('div');
+        Object.assign(errorDialog.style, {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: '#2d2d2d',
+            color: '#ffffff',
+            padding: '20px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            zIndex: '10000',
+            maxWidth: '400px',
+            fontFamily: 'Arial, sans-serif'
+        });
+
+        // Create dialog content safely using DOM API
+        const headerDiv = document.createElement('div');
+        Object.assign(headerDiv.style, {
+            display: 'flex',
+            alignItems: 'center',
+            marginBottom: '15px'
+        });
+
+        const warningSpan = document.createElement('span');
+        Object.assign(warningSpan.style, {
+            color: '#ff6b6b',
+            fontSize: '20px',
+            marginRight: '10px'
+        });
+        warningSpan.textContent = '⚠️';
+
+        const titleStrong = document.createElement('strong');
+        titleStrong.textContent = 'Error';
+
+        headerDiv.appendChild(warningSpan);
+        headerDiv.appendChild(titleStrong);
+
+        const messageP = document.createElement('p');
+        Object.assign(messageP.style, {
+            margin: '0 0 20px 0',
+            lineHeight: '1.4'
+        });
+        messageP.textContent = message; // Safe: textContent prevents XSS
+
+        const okBtn = document.createElement('button');
+        Object.assign(okBtn.style, {
+            background: '#007acc',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            float: 'right'
+        });
+        okBtn.textContent = 'OK';
+
+        errorDialog.appendChild(headerDiv);
+        errorDialog.appendChild(messageP);
+        errorDialog.appendChild(okBtn);
+
+        document.body.appendChild(errorDialog);
+
+        if (okBtn) {
+            okBtn.addEventListener('click', () => {
+                document.body.removeChild(errorDialog);
+            });
+        }
+
+        // Auto-remove after 10 seconds
+        setTimeout(() => {
+            if (document.body.contains(errorDialog)) {
+                document.body.removeChild(errorDialog);
+            }
+        }, 10000);
+    }
 }
 
-async function initialize() {
+// Initialize the application when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    window.app = new ImageGalleryManager();
+});
 
-  elements = getElements();
-
-  ui = createStatusUI({ elements, state, electron });
-
-  gallery = createGalleryController({ state, elements, ui, electron });
-
-  archive = createArchiveController({ state, elements, ui, electron, gallery });
-
-  gallery.setArchiveIntegration({
-
-    loadAdjacent: archive.loadAdjacentArchive,
-
-    updateLibraryInfo: archive.updateLibraryInfo
-
-  });
-
-  archive.setHistoryController(historyController);
-
-  attachEventListeners();
-
-  setupDragAndDrop();
-
-  document.addEventListener('keydown', handleGlobalKeydown);
-  document.addEventListener('click', handleDocumentClick);
-
-
-  gallery.attachEventListeners();
-
-  await loadSettings();
-
-  await historyController.refreshHistory();
-
-  await archive.updateLibraryInfo();
-
-  await applyClipboardAutoload();
-
+// Export for debugging
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = ImageGalleryManager;
 }
-
-document.addEventListener('DOMContentLoaded', initialize);
-
-
-
-
-
