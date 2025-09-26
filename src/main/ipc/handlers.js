@@ -1,5 +1,6 @@
 const { dialog } = require('electron');
 const databaseService = require('../database');
+const imageService = require('../services/imageService');
 const config = require('../config');
 const { IPC_CHANNELS } = require('../../shared/constants');
 
@@ -27,6 +28,80 @@ handlers[IPC_CHANNELS.IMAGE_LOAD] = async (event, imageId) => {
     return { success: true, data: image };
   } catch (error) {
     console.error('Image load error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Image service operations
+handlers['image:load-metadata'] = async (event, filePath) => {
+  try {
+    const metadata = await imageService.loadImageMetadata(filePath);
+    return { success: true, data: metadata };
+  } catch (error) {
+    console.error('Load image metadata error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+handlers['image:process-for-display'] = async (event, { filePath, targetWidth, targetHeight }) => {
+  try {
+    const buffer = await imageService.processImageForDisplay(filePath, targetWidth, targetHeight);
+    return { success: true, data: buffer };
+  } catch (error) {
+    console.error('Process image for display error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+handlers['image:get-full-quality'] = async (event, filePath) => {
+  try {
+    const buffer = await imageService.getFullQualityImage(filePath);
+    return { success: true, data: buffer };
+  } catch (error) {
+    console.error('Get full quality image error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+handlers['image:copy-to-gallery'] = async (event, { sourcePath, filename }) => {
+  try {
+    const targetPath = await imageService.copyImageToGallery(sourcePath, filename);
+    return { success: true, data: { path: targetPath } };
+  } catch (error) {
+    console.error('Copy image to gallery error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+handlers['image:validate-format'] = async (event, filePath) => {
+  try {
+    const isValid = imageService.isSupportedImageFormat(filePath);
+    return { success: true, data: { isValid, path: filePath } };
+  } catch (error) {
+    console.error('Validate image format error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+handlers['files:select-images'] = async (event) => {
+  try {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Images',
+          extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff', 'tif']
+        }
+      ]
+    });
+
+    if (!result.canceled) {
+      return { success: true, data: { files: result.filePaths } };
+    } else {
+      return { success: false, error: 'User cancelled file selection' };
+    }
+  } catch (error) {
+    console.error('File selection error:', error);
     return { success: false, error: error.message };
   }
 };

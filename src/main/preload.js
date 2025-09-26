@@ -76,6 +76,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL, url)
   },
 
+  // Image service operations
+  images: {
+    loadMetadata: (filePath) => ipcRenderer.invoke('image:load-metadata', filePath),
+    processForDisplay: (filePath, targetWidth, targetHeight) => ipcRenderer.invoke('image:process-for-display', { filePath, targetWidth, targetHeight }),
+    getFullQuality: (filePath) => ipcRenderer.invoke('image:get-full-quality', filePath),
+    copyToGallery: (sourcePath, filename) => ipcRenderer.invoke('image:copy-to-gallery', { sourcePath, filename }),
+    validateFormat: (filePath) => ipcRenderer.invoke('image:validate-format', filePath)
+  },
+
+  // File operations
+  files: {
+    selectImages: () => ipcRenderer.invoke('files:select-images')
+  },
+
   // Event listeners
   on: (channel, callback) => {
     // Only allow listening to specific channels for security

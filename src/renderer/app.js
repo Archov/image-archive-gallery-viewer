@@ -6,6 +6,11 @@ class ImageGalleryManager {
         this.initialized = false;
         this.currentView = 'loading';
 
+        // Gallery state
+        this.galleryImages = []; // Array of loaded images
+        this.columnWidth = 300; // Default column width in pixels
+        this.columns = 4; // Default number of columns
+
         this.init();
     }
 
@@ -296,39 +301,504 @@ class ImageGalleryManager {
         const contentArea = document.getElementById('content-area');
         contentArea.innerHTML = `
             <div class="gallery-view">
-                <div class="gallery-controls">
-                    <div class="control-group">
-                        <label>Sort by:</label>
-                        <select class="control-select">
-                            <option value="date-desc">Newest First</option>
-                            <option value="date-asc">Oldest First</option>
-                            <option value="name">Name</option>
-                            <option value="artist">Artist</option>
-                        </select>
+                <div class="gallery-header">
+                    <div class="gallery-info">
+                        <span id="gallery-count">${this.galleryImages.length} images</span>
                     </div>
-                    <div class="control-group">
-                        <label>View:</label>
-                        <select class="control-select">
-                            <option value="grid">Grid</option>
-                            <option value="list">List</option>
-                        </select>
+                    <div class="gallery-actions">
+                        <button class="secondary-button" id="select-files-btn">Add Images</button>
                     </div>
                 </div>
-                <div class="gallery-grid" id="gallery-grid">
-                    <div class="empty-state">
-                        <div class="empty-icon">🖼️</div>
-                        <h3>No Images Yet</h3>
-                        <p>Import some images to get started</p>
-                        <button class="primary-button" id="import-images-btn">Import Images</button>
+                <div class="gallery-container" id="gallery-container">
+                    <div class="gallery-grid" id="gallery-grid">
+                        ${this.renderGalleryGrid()}
+                    </div>
+                    <div class="gallery-drop-zone" id="gallery-drop-zone">
+                        <div class="drop-zone-content">
+                            <div class="drop-icon">📸</div>
+                            <h3>Drop Images Here</h3>
+                            <p>or click "Add Images" above</p>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
 
-        // Add event listener for import button (consistent with other event handling)
-        const importBtn = document.getElementById('import-images-btn');
-        if (importBtn) {
-            importBtn.addEventListener('click', () => this.switchView('import'));
+        // Set up event listeners
+        this.setupGalleryEventListeners();
+
+        // Set up drag and drop
+        this.setupDragAndDrop();
+    }
+
+    renderGalleryGrid() {
+        if (this.galleryImages.length === 0) {
+            return `
+                <div class="empty-state">
+                    <div class="empty-icon">🖼️</div>
+                    <h3>No Images Yet</h3>
+                    <p>Drag and drop images here or use "Add Images"</p>
+                </div>
+            `;
+        }
+
+        return this.galleryImages.map(image => `
+            <div class="gallery-item" data-image-id="${image.id}" data-image-path="${image.path}">
+                <div class="image-container">
+                    <img src="" alt="${image.filename}" class="gallery-image" loading="lazy">
+                    <div class="image-overlay">
+                        <div class="image-info">
+                            <span class="image-name">${image.filename}</span>
+                            <span class="image-size">${this.formatFileSize(image.size)}</span>
+                        </div>
+                    </div>
+                    <div class="image-error" style="display: none;">
+                        <span>⚠️ Failed to load</span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    setupGalleryEventListeners() {
+        // Add images button
+        const selectBtn = document.getElementById('select-files-btn');
+        if (selectBtn) {
+            selectBtn.addEventListener('click', () => this.selectImages());
+        }
+
+        // Gallery item clicks for fullscreen
+        const galleryGrid = document.getElementById('gallery-grid');
+        if (galleryGrid) {
+            galleryGrid.addEventListener('click', (event) => {
+                const galleryItem = event.target.closest('.gallery-item');
+                if (galleryItem) {
+                    const imageId = galleryItem.dataset.imageId;
+                    const image = this.galleryImages.find(img => img.id === imageId);
+                    if (image) {
+                        this.openFullscreen(image);
+                    }
+                }
+            });
+        }
+    }
+
+    setupDragAndDrop() {
+        const dropZone = document.getElementById('gallery-drop-zone');
+        const galleryContainer = document.getElementById('gallery-container');
+
+        if (!dropZone || !galleryContainer) return;
+
+        // Drag over
+        galleryContainer.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            galleryContainer.classList.add('drag-over');
+        });
+
+        // Drag leave
+        galleryContainer.addEventListener('dragleave', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            // Only remove class if leaving the container entirely
+            if (!galleryContainer.contains(event.relatedTarget)) {
+                galleryContainer.classList.remove('drag-over');
+            }
+        });
+
+        // Drop
+        galleryContainer.addEventListener('drop', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            galleryContainer.classList.remove('drag-over');
+
+            const files = Array.from(event.dataTransfer.files);
+            this.handleDroppedFiles(files);
+        });
+    }
+
+    async selectImages() {
+        try {
+            const result = await window.electronAPI.files.selectImages();
+            if (result.success) {
+                await this.loadImagesFromPaths(result.data.files);
+            }
+        } catch (error) {
+            this.showError(`Failed to select images: ${error.message}`);
+        }
+    }
+
+    async handleDroppedFiles(files) {
+        // Filter to only image files
+        const imageFiles = files.filter(file => {
+            const ext = file.name.toLowerCase().split('.').pop();
+            return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff', 'tif'].includes(ext);
+        });
+
+        if (imageFiles.length === 0) {
+            this.showError('No valid image files found in drop');
+            return;
+        }
+
+        const filePaths = imageFiles.map(file => file.path);
+        await this.loadImagesFromPaths(filePaths);
+    }
+
+    async loadImagesFromPaths(filePaths) {
+        try {
+            const validImages = [];
+
+            for (const filePath of filePaths) {
+                try {
+                    // Validate format first
+                    const validation = await window.electronAPI.images.validateFormat(filePath);
+                    if (validation.success && validation.data.isValid) {
+                        // Load metadata
+                        const metadata = await window.electronAPI.images.loadMetadata(filePath);
+                        if (metadata.success) {
+                            validImages.push(metadata.data);
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Skipping invalid image ${filePath}:`, error);
+                }
+            }
+
+            if (validImages.length === 0) {
+                this.showError('No valid images could be loaded');
+                return;
+            }
+
+            // Add to gallery
+            this.galleryImages.push(...validImages);
+
+            // Update the display
+            this.updateGalleryDisplay();
+
+            // Load the images (start with visible ones)
+            this.loadVisibleImages();
+
+        } catch (error) {
+            this.showError(`Failed to load images: ${error.message}`);
+        }
+    }
+
+    updateGalleryDisplay() {
+        const galleryGrid = document.getElementById('gallery-grid');
+        const galleryCount = document.getElementById('gallery-count');
+
+        if (galleryGrid) {
+            galleryGrid.innerHTML = this.renderGalleryGrid();
+        }
+
+        if (galleryCount) {
+            galleryCount.textContent = `${this.galleryImages.length} image${this.galleryImages.length !== 1 ? 's' : ''}`;
+        }
+    }
+
+    async loadVisibleImages() {
+        // Simple lazy loading - load all images for now (can be optimized later)
+        const imageElements = document.querySelectorAll('.gallery-image');
+
+        for (const imgElement of imageElements) {
+            const galleryItem = imgElement.closest('.gallery-item');
+            if (!galleryItem) continue;
+
+            const imagePath = galleryItem.dataset.imagePath;
+            if (!imagePath) continue;
+
+            try {
+                // Load full-quality image (we'll optimize this later)
+                const result = await window.electronAPI.images.getFullQuality(imagePath);
+                if (result.success) {
+                    const blob = new Blob([result.data], { type: 'image/jpeg' });
+                    const url = URL.createObjectURL(blob);
+                    imgElement.src = url;
+
+                    // Clean up object URL when image loads
+                    imgElement.addEventListener('load', () => {
+                        URL.revokeObjectURL(url);
+                    });
+                } else {
+                    this.showImageError(imgElement);
+                }
+            } catch (error) {
+                console.error(`Failed to load image ${imagePath}:`, error);
+                this.showImageError(imgElement);
+            }
+        }
+    }
+
+    showImageError(imgElement) {
+        const galleryItem = imgElement.closest('.gallery-item');
+        if (galleryItem) {
+            const errorDiv = galleryItem.querySelector('.image-error');
+            if (errorDiv) {
+                errorDiv.style.display = 'flex';
+            }
+        }
+        imgElement.style.display = 'none';
+    }
+
+    openFullscreen(image) {
+        const currentIndex = this.galleryImages.findIndex(img => img.id === image.id);
+        if (currentIndex === -1) return;
+
+        // Create fullscreen overlay
+        const overlay = document.createElement('div');
+        Object.assign(overlay.style, {
+            position: 'fixed',
+            top: '0',
+            left: '0',
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.95)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: '10000',
+            cursor: 'default'
+        });
+
+        // Create image container
+        const imageContainer = document.createElement('div');
+        Object.assign(imageContainer.style, {
+            position: 'relative',
+            maxWidth: '90vw',
+            maxHeight: '90vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+        });
+
+        // Create image element
+        const fsImage = document.createElement('img');
+        Object.assign(fsImage.style, {
+            maxWidth: '100%',
+            maxHeight: '100%',
+            objectFit: 'contain',
+            borderRadius: '4px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)'
+        });
+        fsImage.alt = image.filename;
+
+        // Create navigation controls
+        const navLeft = document.createElement('button');
+        Object.assign(navLeft.style, {
+            position: 'absolute',
+            left: '20px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'rgba(0, 0, 0, 0.7)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '50%',
+            width: '50px',
+            height: '50px',
+            fontSize: '24px',
+            cursor: 'pointer',
+            display: currentIndex > 0 ? 'flex' : 'none',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'background-color 0.2s'
+        });
+        navLeft.textContent = '‹';
+        navLeft.addEventListener('click', () => this.navigateFullscreen(-1));
+
+        const navRight = document.createElement('button');
+        Object.assign(navRight.style, {
+            position: 'absolute',
+            right: '20px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'rgba(0, 0, 0, 0.7)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '50%',
+            width: '50px',
+            height: '50px',
+            fontSize: '24px',
+            cursor: 'pointer',
+            display: currentIndex < this.galleryImages.length - 1 ? 'flex' : 'none',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'background-color 0.2s'
+        });
+        navRight.textContent = '›';
+        navRight.addEventListener('click', () => this.navigateFullscreen(1));
+
+        // Create close button
+        const closeBtn = document.createElement('button');
+        Object.assign(closeBtn.style, {
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            background: 'rgba(0, 0, 0, 0.7)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '50%',
+            width: '40px',
+            height: '40px',
+            fontSize: '20px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'background-color 0.2s'
+        });
+        closeBtn.textContent = '×';
+        closeBtn.addEventListener('click', () => this.closeFullscreen());
+
+        // Create image info overlay
+        const infoOverlay = document.createElement('div');
+        Object.assign(infoOverlay.style, {
+            position: 'absolute',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(0, 0, 0, 0.8)',
+            color: 'white',
+            padding: '10px 20px',
+            borderRadius: '20px',
+            fontSize: '14px',
+            textAlign: 'center',
+            opacity: '0',
+            transition: 'opacity 0.3s',
+            pointerEvents: 'none'
+        });
+        infoOverlay.textContent = `${currentIndex + 1} / ${this.galleryImages.length} • ${image.filename} • ${this.formatFileSize(image.size)}`;
+
+        // Add hover effect for info
+        imageContainer.addEventListener('mouseenter', () => {
+            infoOverlay.style.opacity = '1';
+        });
+        imageContainer.addEventListener('mouseleave', () => {
+            infoOverlay.style.opacity = '0';
+        });
+
+        // Assemble the overlay
+        imageContainer.appendChild(fsImage);
+        imageContainer.appendChild(navLeft);
+        imageContainer.appendChild(navRight);
+        imageContainer.appendChild(closeBtn);
+        imageContainer.appendChild(infoOverlay);
+        overlay.appendChild(imageContainer);
+
+        // Store fullscreen state
+        this.fullscreenState = {
+            overlay,
+            fsImage,
+            navLeft,
+            navRight,
+            infoOverlay,
+            currentIndex
+        };
+
+        // Load the image
+        this.loadFullscreenImage(image);
+
+        // Add to DOM
+        document.body.appendChild(overlay);
+
+        // Set up keyboard navigation
+        this.setupKeyboardNavigation();
+
+        // Focus the overlay for keyboard events
+        overlay.focus();
+    }
+
+    async loadFullscreenImage(image) {
+        if (!this.fullscreenState) return;
+
+        const { fsImage } = this.fullscreenState;
+
+        try {
+            const result = await window.electronAPI.images.getFullQuality(image.path);
+            if (result.success) {
+                const blob = new Blob([result.data], { type: 'image/jpeg' });
+                const url = URL.createObjectURL(blob);
+                fsImage.src = url;
+
+                // Clean up object URL when image loads
+                fsImage.addEventListener('load', () => {
+                    URL.revokeObjectURL(url);
+                });
+            } else {
+                fsImage.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxNiIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+RXJyb3I6IEZhYWxlZCB0byBsb2FkPC90ZXh0Pjwvc3ZnPg==';
+            }
+        } catch (error) {
+            console.error('Failed to load fullscreen image:', error);
+            fsImage.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1zaXplPSIxNiIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+RXJyb3I6IEZhYWxlZCB0byBsb2FkPC90ZXh0Pjwvc3ZnPg==';
+        }
+    }
+
+    navigateFullscreen(direction) {
+        if (!this.fullscreenState) return;
+
+        const { currentIndex, navLeft, navRight, infoOverlay } = this.fullscreenState;
+        const newIndex = currentIndex + direction;
+
+        if (newIndex >= 0 && newIndex < this.galleryImages.length) {
+            this.fullscreenState.currentIndex = newIndex;
+            const newImage = this.galleryImages[newIndex];
+
+            // Update navigation buttons
+            navLeft.style.display = newIndex > 0 ? 'flex' : 'none';
+            navRight.style.display = newIndex < this.galleryImages.length - 1 ? 'flex' : 'none';
+
+            // Update info
+            infoOverlay.textContent = `${newIndex + 1} / ${this.galleryImages.length} • ${newImage.filename} • ${this.formatFileSize(newImage.size)}`;
+
+            // Load new image
+            this.loadFullscreenImage(newImage);
+        }
+    }
+
+    closeFullscreen() {
+        if (!this.fullscreenState) return;
+
+        const { overlay } = this.fullscreenState;
+        document.body.removeChild(overlay);
+
+        // Clean up keyboard navigation
+        this.cleanupKeyboardNavigation();
+
+        this.fullscreenState = null;
+    }
+
+    setupKeyboardNavigation() {
+        this.keyboardHandler = (event) => {
+            switch (event.key) {
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    this.navigateFullscreen(-1);
+                    break;
+                case 'ArrowRight':
+                    event.preventDefault();
+                    this.navigateFullscreen(1);
+                    break;
+                case 'Escape':
+                    event.preventDefault();
+                    this.closeFullscreen();
+                    break;
+            }
+        };
+
+        document.addEventListener('keydown', this.keyboardHandler);
+    }
+
+    cleanupKeyboardNavigation() {
+        if (this.keyboardHandler) {
+            document.removeEventListener('keydown', this.keyboardHandler);
+            this.keyboardHandler = null;
         }
     }
 
