@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { pathToFileURL } = require('url');
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -16,6 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Platform info
   platform: process.platform,
+
+  // File URL encoding
+  toFileUrl: (filePath) => pathToFileURL(filePath).href,
 
   // Debug info
   getDebugLogPath: () => ipcRenderer.invoke('get-debug-log-path')

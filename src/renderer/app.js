@@ -243,7 +243,7 @@ class ImageGallery {
                 const allResults = [];
                 let batchSuccessfulCount = 0;
 
-                for (const settled of batchResults) {
+                batchResults.forEach((settled, idx) => {
                     if (settled.status === 'fulfilled') {
                         const result = settled.value;
                         if (result) {
@@ -252,17 +252,19 @@ class ImageGallery {
                                 batchSuccessfulCount++;
                             }
                         }
-                    } else {
-                        console.error(`❌ Promise rejected:`, settled.reason);
-                        // Create error result for rejected promises
-                        allResults.push({
-                            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                            name: 'Unknown',
-                            error: true,
-                            dataUrl: null
-                        });
+                        return;
                     }
-                }
+
+                    const source = batch[idx];
+                    console.error('❌ Promise rejected:', settled.reason);
+                    allResults.push({
+                        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        name: source?.name || source?.path || 'Unknown',
+                        path: source?.path,
+                        error: true,
+                        dataUrl: null
+                    });
+                });
 
                 this.images.push(...allResults);
 
@@ -326,7 +328,7 @@ class ImageGallery {
                 const allResults = [];
                 let batchSuccessfulCount = 0;
 
-                for (const settled of batchResults) {
+                batchResults.forEach((settled, idx) => {
                     if (settled.status === 'fulfilled') {
                         const result = settled.value;
                         if (result) {
@@ -335,17 +337,19 @@ class ImageGallery {
                                 batchSuccessfulCount++;
                             }
                         }
-                    } else {
-                        console.error(`❌ Promise rejected:`, settled.reason);
-                        // Create error result for rejected promises
-                        allResults.push({
-                            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                            name: 'Unknown',
-                            error: true,
-                            dataUrl: null
-                        });
+                        return;
                     }
-                }
+
+                    const source = batch[idx];
+                    console.error('❌ Promise rejected:', settled.reason);
+                    allResults.push({
+                        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        name: source?.name || source?.path || 'Unknown',
+                        path: source?.path,
+                        error: true,
+                        dataUrl: null
+                    });
+                });
 
                 this.images.push(...allResults);
 
@@ -386,16 +390,7 @@ class ImageGallery {
             return new Promise((resolve, reject) => {
                 const img = new Image();
 
-                // Properly construct file URL based on platform
-                let fileUrl;
-                const platform = window.electronAPI.platform || (navigator.userAgent.includes('Win') ? 'win32' : 'other');
-                if (platform === 'win32') {
-                    // Windows: file:///C:/path/to/file
-                    fileUrl = 'file:///' + file.path.replace(/\\/g, '/');
-                } else {
-                    // Unix: file:///path/to/file
-                    fileUrl = 'file://' + file.path;
-                }
+                const fileUrl = window.electronAPI.toFileUrl(file.path);
 
                 img.onload = () => {
                     const processTime = performance.now() - startTime;
@@ -466,14 +461,7 @@ class ImageGallery {
     async processImageFileFromPath(filePath) {
         const startTime = performance.now();
         try {
-            // Properly construct file URL based on platform
-            let fileUrl;
-            const platform = window.electronAPI.platform || (navigator.userAgent.includes('Win') ? 'win32' : 'other');
-            if (platform === 'win32') {
-                fileUrl = 'file:///' + filePath.replace(/\\/g, '/');
-            } else {
-                fileUrl = 'file://' + filePath;
-            }
+            const fileUrl = window.electronAPI.toFileUrl(filePath);
 
             const stats = await window.electronAPI.getFileStats(filePath);
 

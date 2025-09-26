@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
+const fsNative = require('fs');
 const os = require('os');
 const { performance } = require('node:perf_hooks');
 
@@ -19,32 +20,52 @@ function validateFilePath(filePath) {
   // Resolve to absolute path to prevent directory traversal
   const absolutePath = path.resolve(sanitizedPath);
 
+  // Resolve symlinks to canonical path to prevent symlink escapes
+  let canonicalPath;
+  try {
+    canonicalPath = fsNative.realpathSync(absolutePath);
+  } catch (error) {
+    throw new Error('Access denied: Unable to resolve file path');
+  }
+
   // Helper function to check if path is within directory
   function isPathWithinDirectory(testPath, allowedDir) {
-    const resolvedAllowedDir = path.resolve(allowedDir);
-    const relative = path.relative(resolvedAllowedDir, testPath);
+    const relative = path.relative(allowedDir, testPath);
     // Normalize case on Windows for comparison
     const normalizedRelative = process.platform === 'win32' ? relative.toLowerCase() : relative;
     // Path is within directory if relative doesn't start with '..' and isn't '..'
     return !normalizedRelative.startsWith('..') && normalizedRelative !== '..';
   }
 
-  // Check if path is within allowed directories
+  // Check against user-selected allowed directories
   for (const allowedDir of allowedDirectories) {
-    if (isPathWithinDirectory(absolutePath, allowedDir)) {
-      return absolutePath;
+    let canonicalAllowed;
+    try {
+      canonicalAllowed = fsNative.realpathSync(allowedDir);
+    } catch {
+      // Skip non-existent entries
+      continue;
+    }
+    if (isPathWithinDirectory(canonicalPath, canonicalAllowed)) {
+      return canonicalPath;
     }
   }
 
-  // Allow paths within the app's data directories
-  const userDataDir = app.getPath('userData');
-  const tempDir = app.getPath('temp');
-  const imagesDir = path.join(userDataDir, 'images');
+  // Check against app's builtin data directories
+  const builtinDirs = [
+    app.getPath('userData'),
+    app.getPath('temp'),
+    path.join(app.getPath('userData'), 'images')
+  ].map(dir => {
+    try {
+      return fsNative.realpathSync(dir);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
 
-  if (isPathWithinDirectory(absolutePath, userDataDir) ||
-      isPathWithinDirectory(absolutePath, tempDir) ||
-      isPathWithinDirectory(absolutePath, imagesDir)) {
-    return absolutePath;
+  if (builtinDirs.some(dir => isPathWithinDirectory(canonicalPath, dir))) {
+    return canonicalPath;
   }
 
   throw new Error('Access denied: File path not within allowed directories');
