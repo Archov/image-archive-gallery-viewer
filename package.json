@@ -1,22 +1,23 @@
 {
-  "name": "archive-image-gallery",
-  "version": "1.0.0",
-  "description": "Desktop gallery viewer for ZIP/RAR/7Z archives",
-  "main": "main.js",
+  "name": "image-gallery-manager",
+  "version": "2.0.0",
+  "description": "Comprehensive desktop image gallery management system with rich metadata, tagging, and browser integration",
+  "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --debug",
+    "build": "electron-builder",
     "build-win": "electron-builder --win",
     "build-mac": "electron-builder --mac",
     "build-linux": "electron-builder --linux",
-    "build-all": "electron-builder --win --mac --linux",
-    "dist": "electron-builder"
+    "build-all": "electron-builder --win --mac --linux"
   },
   "keywords": [
+    "image-gallery",
+    "metadata",
+    "tagging",
     "archive",
-    "gallery",
-    "image",
-    "viewer"
+    "electron"
   ],
   "author": "You",
   "license": "MIT",
@@ -25,21 +26,20 @@
     "electron-builder": "^24.9.1"
   },
   "dependencies": {
+    "better-sqlite3": "^9.0.0",
+    "sharp": "^0.33.0",
+    "uuid": "^9.0.1",
     "adm-zip": "^0.5.10",
     "node-unrar-js": "^2.0.0",
-    "node-7z": "^3.0.0",
-    "uuid": "^9.0.1"
+    "node-7z": "^3.0.0"
   },
   "build": {
-    "appId": "com.yourname.archive-image-gallery",
-    "productName": "Archive Image Gallery",
+    "appId": "com.yourname.image-gallery-manager",
+    "productName": "Image Gallery Manager",
     "directories": {
       "output": "dist"
     },
     "files": [
-      "main.js",
-      "preload.js",
-      "index.html",
       "src/**/*",
       "package.json",
       "node_modules/**/*"
