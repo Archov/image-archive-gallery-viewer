@@ -111,7 +111,6 @@ body {
     background: #1a1a1a;
     cursor: pointer;
     contain: layout style paint;
-    image-rendering: -webkit-optimize-contrast;
     image-rendering: crisp-edges;
 }
 
@@ -295,4 +294,5 @@ html {
 /* Performance optimizations */
 .gallery-image {
     -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
 }
