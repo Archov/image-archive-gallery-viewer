@@ -51,12 +51,12 @@ Each PR file contains:
 11. `pr-11-cbxtools-integration.md` - Image compression optimization
 12. `pr-12-tag-system-foundation.md` - Basic tagging system
 13. `pr-13-bulk-tag-operations.md` - Mass tag editing capabilities
-14. `pr-17-basic-query-system.md` - Tag-based filtering and search
+14. `pr-14-import-export-system.md` - Data import/export functionality
 
 **Phase 4: Advanced Features (PRs 15-17)**
-15. `pr-14-import-export-system.md` - Data import/export functionality
-16. `pr-15-performance-optimization.md` - Large library performance tuning
-17. `pr-16-advanced-features.md` - Final polish and advanced capabilities
+15. `pr-15-performance-optimization.md` - Large library performance tuning
+16. `pr-16-advanced-features.md` - Final polish and advanced capabilities
+17. `pr-17-basic-query-system.md` - Tag-based filtering and search
 
 ## ✅ **Completion Criteria**
 

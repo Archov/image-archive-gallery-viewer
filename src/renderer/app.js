@@ -319,11 +319,17 @@ class ImageGalleryManager {
                         <div class="empty-icon">🖼️</div>
                         <h3>No Images Yet</h3>
                         <p>Import some images to get started</p>
-                        <button class="primary-button" onclick="app.switchView('import')">Import Images</button>
+                        <button class="primary-button" id="import-images-btn">Import Images</button>
                     </div>
                 </div>
             </div>
         `;
+
+        // Add event listener for import button (consistent with other event handling)
+        const importBtn = document.getElementById('import-images-btn');
+        if (importBtn) {
+            importBtn.addEventListener('click', () => this.switchView('import'));
+        }
     }
 
     showTagsView() {

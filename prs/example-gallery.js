@@ -168,7 +168,7 @@
     };
   }
 
-  async function fetchWithFallback(url, fallbackUrl) {
+  const fetchWithFallback = async function(url, fallbackUrl) {
     // Try full-size first, then fallback
     try {
       const res = await fetch(url, { credentials: 'omit' });
@@ -182,7 +182,7 @@
       }
       throw e;
     }
-  }
+  };
 
   function openGallery() {
     const loadingDiv = document.createElement('div');
@@ -297,12 +297,12 @@
         border: 'none', padding: '5px 10px', borderRadius: '3px', cursor: 'pointer'
       });
 
-      function galleryPopstateHandler() {
+      const galleryPopstateHandler = function() {
         if (document.body.contains(gallery)) {
           history.pushState({ gallery: true }, '', location.href);
           close.onclick();
         }
-      }
+      };
 
       close.onclick = () => {
         document.body.removeChild(gallery);
@@ -414,7 +414,7 @@
       borderRadius: '20px', fontSize: '14px'
     });
 
-    function updateImage() {
+    const updateImage = function() {
       const data = imageData[currentIndex];
       fsImg.dataset.fallbackApplied = '0';
       attachFallback(fsImg, data);
@@ -422,35 +422,35 @@
       counter.textContent = `${currentIndex + 1} / ${imageData.length}`;
       prevBtn.style.opacity = currentIndex === 0 ? '0.3' : '1';
       nextBtn.style.opacity = currentIndex === imageData.length - 1 ? '0.3' : '1';
-    }
+    };
 
-    function showPrevious() { if (currentIndex > 0) { currentIndex--; updateImage(); } }
-    function showNext() { if (currentIndex < imageData.length - 1) { currentIndex++; updateImage(); } }
+    const showPrevious = function() { if (currentIndex > 0) { currentIndex--; updateImage(); } };
+    const showNext = function() { if (currentIndex < imageData.length - 1) { currentIndex++; updateImage(); } };
 
-    function closeFullscreen() {
+    const closeFullscreen = function() {
       overlay.style.opacity = '0';
       gallery.style.opacity = '1';
       controlBar.style.opacity = '1';
       window.removeEventListener('keydown', keyHandler);
       window.removeEventListener('popstate', fsPop);
       setTimeout(() => { if (document.body.contains(overlay)) document.body.removeChild(overlay); }, 300);
-    }
+    };
 
-    function fsPop() {
+    const fsPop = function() {
       if (document.body.contains(overlay)) {
         history.pushState({ fullscreen: true }, '', location.href);
         closeFullscreen();
       }
-    }
+    };
 
-    function keyHandler(e) {
+    const keyHandler = function(e) {
       switch (e.key) {
         case 'ArrowLeft': e.preventDefault(); showPrevious(); break;
         case 'ArrowRight': e.preventDefault(); showNext(); break;
         case 'Escape':
         case 'Backspace': e.preventDefault(); closeFullscreen(); break;
       }
-    }
+    };
 
     prevBtn.onclick = showPrevious;
     nextBtn.onclick = showNext;

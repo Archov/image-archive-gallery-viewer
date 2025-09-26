@@ -117,10 +117,12 @@ handlers[IPC_CHANNELS.WINDOW_CLOSE] = (event) => {
 };
 
 handlers[IPC_CHANNELS.WINDOW_OPEN_DEVTOOLS] = (event) => {
-  if (config.isDevelopment) {
+  // Stricter DevTools access control to prevent accidental exposure in production builds
+  if (config.isDevelopment && process.env.NODE_ENV === 'development' && !process.env.CI) {
     event.sender.openDevTools();
+    return { success: true };
   }
-  return { success: true };
+  return { success: false, error: 'DevTools access denied' };
 };
 
 // System operations
