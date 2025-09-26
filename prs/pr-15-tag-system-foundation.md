@@ -1,4 +1,4 @@
-# PR 3: Tag System Foundation
+# PR 15: Tag System Foundation
 
 ## 🎯 **Overview**
 Implement basic tag CRUD operations and per-image tagging.

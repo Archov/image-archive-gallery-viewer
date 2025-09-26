@@ -1,4 +1,4 @@
-# PR 5: Basic Query System
+# PR 17: Basic Query System
 
 ## 🎯 **Overview**
 Implement tag-based filtering and simple search.
@@ -28,7 +28,7 @@ Implement tag-based filtering and simple search.
 - Update gallery with filtered results
 
 ## 📊 **Dependencies**
-- Tag system (PR 3)
+- Tag system (PR 15)
 - Gallery component (PR 1)
 - Database FTS virtual table
 

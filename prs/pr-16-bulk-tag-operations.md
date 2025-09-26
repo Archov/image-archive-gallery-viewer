@@ -1,4 +1,4 @@
-# PR 4: Bulk Tag Operations
+# PR 16: Bulk Tag Operations
 
 ## 🎯 **Overview**
 Add mass tag assignment and bulk editing capabilities.
@@ -29,7 +29,7 @@ Add mass tag assignment and bulk editing capabilities.
 
 ## 📊 **Dependencies**
 - Gallery component (PR 1)
-- Tag system (PR 3)
+- Tag system (PR 15)
 - Database transaction support
 
 ## 🧪 **Testing Checklist**
