@@ -5,6 +5,7 @@ class ImageGallery {
         this.currentIndex = 0;
         this.isFullscreen = false;
         this.debugLogs = [];
+        this.blobUrls = [];
         this.fullscreenWheelHandler = null;
 
         this.initializeElements();
@@ -24,19 +25,25 @@ class ImageGallery {
         const originalWarn = console.warn;
 
         console.log = (...args) => {
-            const message = args.join(' ');
+            const message = args.map(arg =>
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
             this.debugLogs.push(`[LOG ${new Date().toISOString()}] ${message}`);
             originalLog.apply(console, args);
         };
 
         console.error = (...args) => {
-            const message = args.join(' ');
+            const message = args.map(arg =>
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
             this.debugLogs.push(`[ERROR ${new Date().toISOString()}] ${message}`);
             originalError.apply(console, args);
         };
 
         console.warn = (...args) => {
-            const message = args.join(' ');
+            const message = args.map(arg =>
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
             this.debugLogs.push(`[WARN ${new Date().toISOString()}] ${message}`);
             originalWarn.apply(console, args);
         };
@@ -47,27 +54,60 @@ class ImageGallery {
         try {
             mainLogPath = await window.electronAPI.getDebugLogPath();
         } catch (e) {
-            console.log('Could not get main process log path');
+            console.warn('⚠️ Could not get main process log path:', e);
         }
 
-        const header = [
+        const fullLogs = [
             '=== GALLERY DEBUG LOGS ===',
             `Generated: ${new Date().toISOString()}`,
-            `Main Process Logs: ${mainLogPath}`,
-            '================================',
-            ''
+            `Platform: ${window.electronAPI.platform}`,
+            `Total images: ${this.images.length}`,
+            `Memory usage: ${performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A'}`,
+            '',
+            '=== MAIN PROCESS LOG PATH ===',
+            mainLogPath || 'Not available',
+            '',
+            '=== RENDERER PROCESS LOGS ===',
+            ...this.debugLogs
         ];
 
-        const fullLogs = header.concat(this.debugLogs);
+        // Try File System Access API first (modern browsers)
+        if ('showSaveFilePicker' in window) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: `gallery-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`,
+                    types: [{
+                        description: 'Text Files',
+                        accept: { 'text/plain': ['.txt'] }
+                    }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(fullLogs.join('\n'));
+                await writable.close();
+                console.log('📄 Debug logs exported via File System Access API');
+                return;
+            } catch (err) {
+                // User cancelled or API not supported, fall back to blob download
+                if (err.name !== 'AbortError') {
+                    console.warn('⚠️ File System Access API failed, falling back to download:', err);
+                } else {
+                    return; // User cancelled
+                }
+            }
+        }
+
+        // Fallback to blob download for older browsers
         const blob = new Blob([fullLogs.join('\n')], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `gallery-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        console.log(`🔍 DEBUG: Renderer logs exported to download folder`);
+        console.log('📄 Debug logs exported to Downloads folder (fallback method)');
         if (mainLogPath) {
             console.log(`🔍 DEBUG: Main process logs available at: ${mainLogPath}`);
         }
@@ -162,6 +202,10 @@ class ImageGallery {
 
     async loadFiles(files) {
         console.log('🔍 DEBUG: loadFiles called with', files.length, 'files');
+
+        // Clean up previous blob URLs to prevent memory leaks
+        this.cleanupBlobUrls();
+
         const imageFiles = files.filter(file => this.isImageFile(file));
         console.log('🔍 DEBUG: Filtered to', imageFiles.length, 'image files');
 
@@ -180,8 +224,10 @@ class ImageGallery {
         this.images = [];
 
         try {
-            // Process files in smaller batches to show progress
-            const batchSize = Math.min(3, imageFiles.length); // Process up to 3 at a time for better performance
+            // Adaptive batch size based on file count and estimated memory
+            const batchSize = imageFiles.length < 10 ? 2 :
+                              imageFiles.length < 50 ? 3 :
+                              imageFiles.length < 100 ? 4 : 5;
             let processedCount = 0;
 
             console.log(`🔍 DEBUG: Processing in batches of ${batchSize}...`);
@@ -193,25 +239,32 @@ class ImageGallery {
                 const batchPromises = batch.map(file => this.processImageFile(file));
                 const batchResults = await Promise.allSettled(batchPromises);
 
-                // Process settled results: collect fulfilled results without internal errors, log rejections
-                const successfulResults = [];
+                // Process settled results: collect all results (including errors for display), log rejections
+                const allResults = [];
                 let batchSuccessfulCount = 0;
 
                 for (const settled of batchResults) {
                     if (settled.status === 'fulfilled') {
                         const result = settled.value;
-                        if (result && !result.error) {
-                            successfulResults.push(result);
-                            batchSuccessfulCount++;
-                        } else if (result && result.error) {
-                            console.error(`❌ Internal error processing file ${result.name || 'unknown'}`);
+                        if (result) {
+                            allResults.push(result);
+                            if (!result.error) {
+                                batchSuccessfulCount++;
+                            }
                         }
                     } else {
                         console.error(`❌ Promise rejected:`, settled.reason);
+                        // Create error result for rejected promises
+                        allResults.push({
+                            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                            name: 'Unknown',
+                            error: true,
+                            dataUrl: null
+                        });
                     }
                 }
 
-                this.images.push(...successfulResults);
+                this.images.push(...allResults);
 
                 processedCount += batch.length;
                 this.updateProgress(processedCount, imageFiles.length);
@@ -241,6 +294,10 @@ class ImageGallery {
 
     async loadFilesFromPaths(filePaths) {
         console.log('🔍 DEBUG: loadFilesFromPaths called with', filePaths.length, 'paths');
+
+        // Clean up previous blob URLs to prevent memory leaks
+        this.cleanupBlobUrls();
+
         console.log(`🚀 Starting to load ${filePaths.length} files from paths...`);
         console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
         const startTime = performance.now();
@@ -250,8 +307,10 @@ class ImageGallery {
         this.images = [];
 
         try {
-            // Process files in smaller batches to show progress
-            const batchSize = Math.min(2, filePaths.length); // Very small batches for file system operations
+            // Adaptive batch size based on file count and estimated memory
+            const batchSize = filePaths.length < 10 ? 2 :
+                              filePaths.length < 50 ? 3 :
+                              filePaths.length < 100 ? 4 : 5;
             let processedCount = 0;
 
             console.log(`🔍 DEBUG: Processing file paths in batches of ${batchSize}...`);
@@ -263,25 +322,32 @@ class ImageGallery {
                 const batchPromises = batch.map(filePath => this.processImageFileFromPath(filePath));
                 const batchResults = await Promise.allSettled(batchPromises);
 
-                // Process settled results: collect fulfilled results without internal errors, log rejections
-                const successfulResults = [];
+                // Process settled results: collect all results (including errors for display), log rejections
+                const allResults = [];
                 let batchSuccessfulCount = 0;
 
                 for (const settled of batchResults) {
                     if (settled.status === 'fulfilled') {
                         const result = settled.value;
-                        if (result && !result.error) {
-                            successfulResults.push(result);
-                            batchSuccessfulCount++;
-                        } else if (result && result.error) {
-                            console.error(`❌ Internal error processing file ${result.name || result.path || 'unknown'}`);
+                        if (result) {
+                            allResults.push(result);
+                            if (!result.error) {
+                                batchSuccessfulCount++;
+                            }
                         }
                     } else {
                         console.error(`❌ Promise rejected:`, settled.reason);
+                        // Create error result for rejected promises
+                        allResults.push({
+                            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                            name: 'Unknown',
+                            error: true,
+                            dataUrl: null
+                        });
                     }
                 }
 
-                this.images.push(...successfulResults);
+                this.images.push(...allResults);
 
                 processedCount += batch.length;
                 this.updateProgress(processedCount, filePaths.length);
@@ -319,14 +385,26 @@ class ImageGallery {
             // Direct file path available (usually on desktop)
             return new Promise((resolve, reject) => {
                 const img = new Image();
+
+                // Properly construct file URL based on platform
+                let fileUrl;
+                const platform = window.electronAPI.platform || (navigator.userAgent.includes('Win') ? 'win32' : 'other');
+                if (platform === 'win32') {
+                    // Windows: file:///C:/path/to/file
+                    fileUrl = 'file:///' + file.path.replace(/\\/g, '/');
+                } else {
+                    // Unix: file:///path/to/file
+                    fileUrl = 'file://' + file.path;
+                }
+
                 img.onload = () => {
                     const processTime = performance.now() - startTime;
                     console.log(`✅ Processed ${file.name} in ${processTime.toFixed(2)}ms`);
                     resolve({
-                        id: Date.now() + Math.random(),
+                        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                         name: file.name,
                         path: file.path,
-                        dataUrl: `file://${file.path.replace(/\\/g, '/')}`,
+                        dataUrl: fileUrl,
                         width: img.naturalWidth,
                         height: img.naturalHeight,
                         aspectRatio: img.naturalWidth / img.naturalHeight,
@@ -338,8 +416,8 @@ class ImageGallery {
                     // Fallback to FileReader if file:// URL fails
                     this.fallbackProcessImageFile(file, startTime).then(resolve).catch(reject);
                 };
-                img.crossOrigin = 'anonymous';
-                img.src = `file://${file.path.replace(/\\/g, '/')}`;
+                // Don't set crossOrigin for file:// URLs
+                img.src = fileUrl;
             });
         } else {
             // Fallback for cases where file.path is not available
@@ -388,8 +466,15 @@ class ImageGallery {
     async processImageFileFromPath(filePath) {
         const startTime = performance.now();
         try {
-            // Try file:// URL first (fastest)
-            const fileUrl = `file://${filePath.replace(/\\/g, '/')}`;
+            // Properly construct file URL based on platform
+            let fileUrl;
+            const platform = window.electronAPI.platform || (navigator.userAgent.includes('Win') ? 'win32' : 'other');
+            if (platform === 'win32') {
+                fileUrl = 'file:///' + filePath.replace(/\\/g, '/');
+            } else {
+                fileUrl = 'file://' + filePath;
+            }
+
             const stats = await window.electronAPI.getFileStats(filePath);
 
             console.log(`Processing ${filePath.split(/[/\\]/).pop()}...`);
@@ -401,7 +486,7 @@ class ImageGallery {
                     const processTime = performance.now() - startTime;
                     console.log(`✅ Loaded ${filePath.split(/[/\\]/).pop()} in ${processTime.toFixed(2)}ms`);
                     resolve({
-                        id: Date.now() + Math.random(),
+                        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                         name: filePath.split(/[/\\]/).pop(),
                         path: filePath,
                         dataUrl: fileUrl,
@@ -419,13 +504,13 @@ class ImageGallery {
                     this.readFileAsBlob(filePath, stats, startTime).then(resolve).catch(reject);
                 };
 
-                img.crossOrigin = 'anonymous';
+                // Don't set crossOrigin for file:// URLs
                 img.src = fileUrl;
             });
         } catch (error) {
             console.error(`Error processing ${filePath}:`, error);
             return {
-                id: Date.now() + Math.random(),
+                id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                 name: filePath.split(/[/\\]/).pop(),
                 path: filePath,
                 error: true,
@@ -453,13 +538,16 @@ class ImageGallery {
         const blob = new Blob([uint8Array], { type: mimeType });
         const dataUrl = URL.createObjectURL(blob);
 
+        // Track blob URLs for cleanup
+        this.blobUrls.push(dataUrl);
+
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.onload = () => {
                 const totalTime = performance.now() - startTime;
                 console.log(`✅ Blob loaded ${filePath.split(/[/\\]/).pop()} in ${totalTime.toFixed(2)}ms`);
                 resolve({
-                    id: Date.now() + Math.random(),
+                    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                     name: filePath.split(/[/\\]/).pop(),
                     path: filePath,
                     dataUrl: dataUrl,
@@ -475,9 +563,16 @@ class ImageGallery {
         });
     }
 
+    cleanupBlobUrls() {
+        if (this.blobUrls) {
+            this.blobUrls.forEach(url => URL.revokeObjectURL(url));
+            this.blobUrls = [];
+        }
+    }
+
     isImageFile(file) {
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg'];
-        const fileName = (file.name || file.path || file).toLowerCase();
+        const fileName = (file?.name || file?.path || '').toLowerCase();
         return imageExtensions.some(ext => fileName.endsWith(ext));
     }
 
@@ -495,11 +590,23 @@ class ImageGallery {
             if (image.error) {
                 const errorDiv = document.createElement('div');
                 errorDiv.className = 'image-error';
-                errorDiv.innerHTML = `
-                    <div class="image-error-icon">⚠️</div>
-                    <div>Failed to load</div>
-                    <div style="font-size: 0.8rem; opacity: 0.7;">${image.name}</div>
-                `;
+
+                const iconDiv = document.createElement('div');
+                iconDiv.className = 'image-error-icon';
+                iconDiv.textContent = '⚠️';
+
+                const messageDiv = document.createElement('div');
+                messageDiv.textContent = 'Failed to load';
+
+                const nameDiv = document.createElement('div');
+                nameDiv.style.fontSize = '0.8rem';
+                nameDiv.style.opacity = '0.7';
+                nameDiv.textContent = image.name;
+
+                errorDiv.appendChild(iconDiv);
+                errorDiv.appendChild(messageDiv);
+                errorDiv.appendChild(nameDiv);
+
                 errorDiv.addEventListener('click', () => this.openFullscreen(index));
                 fragment.appendChild(errorDiv);
             } else {
@@ -520,7 +627,12 @@ class ImageGallery {
     }
 
     openFullscreen(index) {
-        if (this.images.length === 0 || this.images[index].error) return;
+        if (this.images.length === 0) return;
+
+        if (this.images[index].error) {
+            console.warn(`Cannot open fullscreen for failed image: ${this.images[index].name}`);
+            return;
+        }
 
         this.currentIndex = index;
         this.isFullscreen = true;
@@ -537,10 +649,15 @@ class ImageGallery {
             if (e.target === this.fullscreenOverlay) this.closeFullscreen();
         };
 
+        let wheelTimeout;
         this.fullscreenWheelHandler = (e) => {
             e.preventDefault();
-            if (e.deltaX > 0 || e.deltaY > 0) this.showNext();
-            else if (e.deltaX < 0 || e.deltaY < 0) this.showPrevious();
+            // Debounce wheel events to prevent too rapid navigation
+            clearTimeout(wheelTimeout);
+            wheelTimeout = setTimeout(() => {
+                if (e.deltaX > 0 || e.deltaY > 0) this.showNext();
+                else if (e.deltaX < 0 || e.deltaY < 0) this.showPrevious();
+            }, 50);
         };
         this.fullscreenOverlay.addEventListener('wheel', this.fullscreenWheelHandler, { passive: false });
     }
@@ -624,7 +741,10 @@ class ImageGallery {
     }
 
     updateProgress(current, total) {
-        if (!this.loadingProgress || !this.progressFill || !this.progressText) return;
+        if (!this.loadingProgress || !this.progressFill || !this.progressText) {
+            console.warn('⚠️ Loading UI elements not found - progress cannot be displayed');
+            return;
+        }
 
         this.loadingProgress.classList.remove('hidden');
         const percentage = total > 0 ? (current / total) * 100 : 0;
@@ -646,7 +766,7 @@ class ImageGallery {
 
 // Initialize the gallery when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    window.gallery = new ImageGallery();
+    new ImageGallery();
 });
 
 // Handle window resize for responsive grid

@@ -14,7 +14,7 @@ A comprehensive desktop image gallery management system with rich metadata, tagg
 - **True fullscreen**: Images fill entire viewport with no borders
 - **No hover effects**: Removed expensive animations for buttery-smooth scrolling
 - **Hardware acceleration**: CSS containment and backface-visibility optimizations
-- **Parallel loading**: All images load simultaneously instead of sequentially
+- **Parallel loading**: Load 2–3 images concurrently for smoother UX
 - Fixed masonry layout, mouse wheel navigation, minimal margins
 - Direct grid children for proper masonry behavior
 - Windows compatibility and error handling
@@ -45,7 +45,6 @@ A comprehensive desktop image gallery management system with rich metadata, tagg
    - Choose multiple image files from the dialog
 4. **Browse gallery**:
    - Images display in a responsive grid
-   - Hover for subtle effects
    - Click any image to open fullscreen
 5. **Fullscreen navigation**:
    - Use arrow buttons or left/right arrow keys to navigate
@@ -67,7 +66,7 @@ A comprehensive desktop image gallery management system with rich metadata, tagg
 - **Error boundaries** for corrupted file handling
 
 ### 📁 File Structure
-```
+```text
 src/
 ├── main/
 │   ├── main.js          # Electron main process

@@ -23,6 +23,7 @@ yarn-debug.log*
 .vscode/
 .cursor/
 temp/
+images/
 # Environment variables
 .env
 image-gallery.code-workspace

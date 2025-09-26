@@ -5,7 +5,8 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "cross-env NODE_ENV=development electron .",    "build": "electron-builder",
+    "dev": "cross-env NODE_ENV=development electron .",
+    "build": "electron-builder",
     "build-win": "electron-builder --win",
     "build-mac": "electron-builder --mac",
     "build-linux": "electron-builder --linux",
@@ -22,17 +23,11 @@
   "license": "MIT",
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
+    "cross-env": "^7.0.3",
     "electron": "^28.1.0",
     "electron-builder": "^24.9.1"
   },
-  "dependencies": {
-    "adm-zip": "^0.5.10",
-    "better-sqlite3": "^9.0.0",
-    "node-7z": "^3.0.0",
-    "node-unrar-js": "^2.0.0",
-    "sharp": "^0.33.0",
-    "uuid": "^9.0.1"
-  },
+  "dependencies": {},
   "build": {
     "appId": "com.yourname.image-gallery-manager",
     "productName": "Image Gallery Manager",
