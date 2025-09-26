@@ -13,8 +13,11 @@ function validateFilePath(filePath) {
     throw new Error('Invalid file path');
   }
 
+  // Sanitize input: normalize path separators and remove null bytes
+  const sanitizedPath = filePath.replace(/\0/g, '').replace(/[/\\]+/g, path.sep);
+
   // Resolve to absolute path to prevent directory traversal
-  const absolutePath = path.resolve(filePath);
+  const absolutePath = path.resolve(sanitizedPath);
 
   // Helper function to check if path is within directory
   function isPathWithinDirectory(testPath, allowedDir) {
