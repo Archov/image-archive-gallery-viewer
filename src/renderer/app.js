@@ -429,24 +429,53 @@ class ImageGalleryManager {
     async loadTagsList() {
         const tagsList = document.getElementById('tags-list');
 
+        // Clear existing content
+        tagsList.innerHTML = '';
+
         if (!this.tags || this.tags.length === 0) {
-            tagsList.innerHTML = '<p class="empty-message">No tags yet. Create your first tag to organize your images.</p>';
+            const emptyMessage = document.createElement('p');
+            emptyMessage.className = 'empty-message';
+            emptyMessage.textContent = 'No tags yet. Create your first tag to organize your images.';
+            tagsList.appendChild(emptyMessage);
             return;
         }
 
-        const tagsHTML = this.tags.map(tag => `
-            <div class="tag-item" style="border-left-color: ${tag.color || '#007acc'}">
-                <div class="tag-info">
-                    <span class="tag-name">${tag.name}</span>
-                    <span class="tag-category">${tag.category}</span>
-                </div>
-                <div class="tag-stats">
-                    <span class="tag-count">${tag.usage_count || 0} images</span>
-                </div>
-            </div>
-        `).join('');
+        // Create tag items safely using DOM API
+        const fragment = document.createDocumentFragment();
+        for (const tag of this.tags) {
+            const tagItem = document.createElement('div');
+            tagItem.className = 'tag-item';
+            tagItem.style.borderLeftColor = tag.color || '#007acc';
 
-        tagsList.innerHTML = tagsHTML;
+            const tagInfo = document.createElement('div');
+            tagInfo.className = 'tag-info';
+
+            const tagName = document.createElement('span');
+            tagName.className = 'tag-name';
+            tagName.textContent = tag.name; // Safe: textContent prevents XSS
+
+            const tagCategory = document.createElement('span');
+            tagCategory.className = 'tag-category';
+            tagCategory.textContent = tag.category; // Safe: textContent prevents XSS
+
+            tagInfo.appendChild(tagName);
+            tagInfo.appendChild(tagCategory);
+
+            const tagStats = document.createElement('div');
+            tagStats.className = 'tag-stats';
+
+            const tagCount = document.createElement('span');
+            tagCount.className = 'tag-count';
+            tagCount.textContent = `${tag.usage_count || 0} images`; // Safe: textContent prevents XSS
+
+            tagStats.appendChild(tagCount);
+
+            tagItem.appendChild(tagInfo);
+            tagItem.appendChild(tagStats);
+            fragment.appendChild(tagItem);
+        }
+
+        tagsList.appendChild(fragment);
     }
 
     // Import methods (placeholders for now)
@@ -499,26 +528,53 @@ class ImageGalleryManager {
             fontFamily: 'Arial, sans-serif'
         });
 
-        errorDialog.innerHTML = `
-            <div style="display: flex; align-items: center; margin-bottom: 15px;">
-                <span style="color: #ff6b6b; font-size: 20px; margin-right: 10px;">⚠️</span>
-                <strong>Error</strong>
-            </div>
-            <p style="margin: 0 0 20px 0; line-height: 1.4;">${message}</p>
-            <button id="error-ok-btn" style="
-                background: #007acc;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                cursor: pointer;
-                float: right;
-            ">OK</button>
-        `;
+        // Create dialog content safely using DOM API
+        const headerDiv = document.createElement('div');
+        Object.assign(headerDiv.style, {
+            display: 'flex',
+            alignItems: 'center',
+            marginBottom: '15px'
+        });
+
+        const warningSpan = document.createElement('span');
+        Object.assign(warningSpan.style, {
+            color: '#ff6b6b',
+            fontSize: '20px',
+            marginRight: '10px'
+        });
+        warningSpan.textContent = '⚠️';
+
+        const titleStrong = document.createElement('strong');
+        titleStrong.textContent = 'Error';
+
+        headerDiv.appendChild(warningSpan);
+        headerDiv.appendChild(titleStrong);
+
+        const messageP = document.createElement('p');
+        Object.assign(messageP.style, {
+            margin: '0 0 20px 0',
+            lineHeight: '1.4'
+        });
+        messageP.textContent = message; // Safe: textContent prevents XSS
+
+        const okBtn = document.createElement('button');
+        Object.assign(okBtn.style, {
+            background: '#007acc',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            float: 'right'
+        });
+        okBtn.textContent = 'OK';
+
+        errorDialog.appendChild(headerDiv);
+        errorDialog.appendChild(messageP);
+        errorDialog.appendChild(okBtn);
 
         document.body.appendChild(errorDialog);
 
-        const okBtn = errorDialog.querySelector('#error-ok-btn');
         if (okBtn) {
             okBtn.addEventListener('click', () => {
                 document.body.removeChild(errorDialog);
