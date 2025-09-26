@@ -24,7 +24,12 @@ class DatabaseService {
       this.db = new Database(DATABASE_FILE);
 
       // Enable WAL mode for better concurrency
-      this.db.pragma('journal_mode = WAL');
+      try {
+        this.db.pragma('journal_mode = WAL');
+      } catch (error) {
+        console.warn('Failed to enable WAL mode, falling back to default journal mode:', error.message);
+        // WAL mode failure is not fatal, continue with default mode
+      }
 
       // Create tables
       this.createTables();

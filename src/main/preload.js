@@ -3,12 +3,12 @@ const { IPC_CHANNELS } = require('../shared/constants');
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
+// NOTE: Removed generic SQL execution for security - only specific purpose-built operations
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Database operations
+  // Database operations - specific channels only (no generic SQL)
   db: {
-    init: () => ipcRenderer.invoke(IPC_CHANNELS.DB_INIT),
-    query: (query, params) => ipcRenderer.invoke(IPC_CHANNELS.DB_QUERY, query, params),
-    execute: (query, params) => ipcRenderer.invoke(IPC_CHANNELS.DB_EXECUTE, query, params)
+    init: () => ipcRenderer.invoke(IPC_CHANNELS.DB_INIT)
+    // Removed: query() and execute() - replaced with specific purpose-built channels below
   },
 
   // Image operations

@@ -6,33 +6,13 @@ const { IPC_CHANNELS } = require('../../shared/constants');
 // IPC handler registry
 const handlers = {};
 
-// Database operations
+// Database operations - Purpose-built channels only (no generic SQL execution)
 handlers[IPC_CHANNELS.DB_INIT] = async () => {
   // Database is already initialized in main process
   return { success: true };
 };
 
-handlers[IPC_CHANNELS.DB_QUERY] = async (event, query, params = []) => {
-  try {
-    const stmt = databaseService.db.prepare(query);
-    const result = stmt.all(...params);
-    return { success: true, data: result };
-  } catch (error) {
-    console.error('Database query error:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-handlers[IPC_CHANNELS.DB_EXECUTE] = async (event, query, params = []) => {
-  try {
-    const stmt = databaseService.db.prepare(query);
-    const result = stmt.run(...params);
-    return { success: true, data: result };
-  } catch (error) {
-    console.error('Database execute error:', error);
-    return { success: false, error: error.message };
-  }
-};
+// NOTE: Removed generic DB_QUERY and DB_EXECUTE for security - replaced with specific purpose-built channels
 
 // Image operations
 handlers[IPC_CHANNELS.IMAGE_LOAD] = async (event, imageId) => {

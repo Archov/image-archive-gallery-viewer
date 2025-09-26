@@ -153,18 +153,28 @@ class ImageGalleryManager {
     }
 
     initializeHeader() {
-        // Window controls
-        document.getElementById('minimize-btn').addEventListener('click', () => {
-            window.electronAPI.window.minimize();
-        });
+        // Window controls - with error handling
+        const minimizeBtn = document.getElementById('minimize-btn');
+        const maximizeBtn = document.getElementById('maximize-btn');
+        const closeBtn = document.getElementById('close-btn');
 
-        document.getElementById('maximize-btn').addEventListener('click', () => {
-            window.electronAPI.window.maximize();
-        });
+        if (minimizeBtn) {
+            minimizeBtn.addEventListener('click', () => {
+                window.electronAPI.window.minimize();
+            });
+        }
 
-        document.getElementById('close-btn').addEventListener('click', () => {
-            window.electronAPI.window.close();
-        });
+        if (maximizeBtn) {
+            maximizeBtn.addEventListener('click', () => {
+                window.electronAPI.window.maximize();
+            });
+        }
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                window.electronAPI.window.close();
+            });
+        }
     }
 
     initializeSidebar() {
@@ -190,9 +200,26 @@ class ImageGalleryManager {
     setupEventListeners() {
         // Search functionality
         const searchInput = document.querySelector('.search-input');
-        searchInput.addEventListener('input', (e) => {
-            this.handleSearch(e.target.value);
-        });
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.handleSearch(e.target.value);
+            });
+        }
+
+        // Import card event listeners
+        const archiveCard = document.querySelector('.import-archive-card');
+        const urlCard = document.querySelector('.import-url-card');
+        const directoryCard = document.querySelector('.import-directory-card');
+
+        if (archiveCard) {
+            archiveCard.addEventListener('click', () => this.importFromArchive());
+        }
+        if (urlCard) {
+            urlCard.addEventListener('click', () => this.importFromUrl());
+        }
+        if (directoryCard) {
+            directoryCard.addEventListener('click', () => this.importFromDirectory());
+        }
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -200,7 +227,7 @@ class ImageGalleryManager {
                 switch (e.key) {
                     case 'f':
                         e.preventDefault();
-                        searchInput.focus();
+                        if (searchInput) searchInput.focus();
                         break;
                     case 'k':
                         if (e.shiftKey) {
@@ -219,17 +246,19 @@ class ImageGalleryManager {
             const tagsResult = await window.electronAPI.tags.getAll();
             if (tagsResult.success) {
                 this.tags = tagsResult.data;
+            } else {
+                console.error('Failed to load tags:', tagsResult.error);
+                this.showError('Failed to load tags. Some features may not work properly.');
             }
 
-            // Load image count
-            const countResult = await window.electronAPI.db.query('SELECT COUNT(*) as count FROM images');
-            if (countResult.success) {
-                this.updateStats(countResult.data[0].count);
-            }
+            // Load image count - Note: db.query removed for security, need to add specific IPC channel
+            // For now, we'll show 0 until we implement proper image counting
+            this.updateStats(0);
 
             this.updateStatus('Ready');
         } catch (error) {
             console.error('Failed to load initial data:', error);
+            this.showError('Failed to load application data. Please restart the application.');
         }
     }
 
@@ -338,17 +367,17 @@ class ImageGalleryManager {
                     <h2>Import Images</h2>
                 </div>
                 <div class="import-options">
-                    <div class="import-card" onclick="app.importFromArchive()">
+                    <div class="import-card import-archive-card">
                         <div class="card-icon">📦</div>
                         <h3>From Archive</h3>
                         <p>Import images from ZIP, RAR, or 7Z files</p>
                     </div>
-                    <div class="import-card" onclick="app.importFromUrl()">
+                    <div class="import-card import-url-card">
                         <div class="card-icon">🌐</div>
                         <h3>From URL</h3>
                         <p>Download and import from web URLs</p>
                     </div>
-                    <div class="import-card" onclick="app.importFromDirectory()">
+                    <div class="import-card import-directory-card">
                         <div class="card-icon">📁</div>
                         <h3>From Directory</h3>
                         <p>Import images from local folders</p>
@@ -444,8 +473,55 @@ class ImageGalleryManager {
     }
 
     showError(message) {
-        // TODO: Implement proper error dialog
-        alert('Error: ' + message);
+        // Create a proper error dialog instead of using alert()
+        const errorDialog = document.createElement('div');
+        Object.assign(errorDialog.style, {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: '#2d2d2d',
+            color: '#ffffff',
+            padding: '20px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            zIndex: '10000',
+            maxWidth: '400px',
+            fontFamily: 'Arial, sans-serif'
+        });
+
+        errorDialog.innerHTML = `
+            <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                <span style="color: #ff6b6b; font-size: 20px; margin-right: 10px;">⚠️</span>
+                <strong>Error</strong>
+            </div>
+            <p style="margin: 0 0 20px 0; line-height: 1.4;">${message}</p>
+            <button id="error-ok-btn" style="
+                background: #007acc;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                cursor: pointer;
+                float: right;
+            ">OK</button>
+        `;
+
+        document.body.appendChild(errorDialog);
+
+        const okBtn = errorDialog.querySelector('#error-ok-btn');
+        if (okBtn) {
+            okBtn.addEventListener('click', () => {
+                document.body.removeChild(errorDialog);
+            });
+        }
+
+        // Auto-remove after 10 seconds
+        setTimeout(() => {
+            if (document.body.contains(errorDialog)) {
+                document.body.removeChild(errorDialog);
+            }
+        }, 10000);
     }
 }
 
