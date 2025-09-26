@@ -1,46 +1,61 @@
-# PR 1: Image File Management & Basic Gallery
+# PR 1: Image File Management & Interactive Gallery
 
 ## 🎯 **Overview**
-Implement core image file handling and basic gallery display to replace the placeholder UI.
+Implement core image file handling and sophisticated gallery display with controls, inspired by example-gallery.js userscript behavior.
 
 ## 📋 **Description**
-Implement core image file handling and basic gallery display to replace the placeholder UI.
+Create a fully interactive gallery with column controls, hover zoom, fullscreen viewing, and keyboard navigation. Include basic image loading from local files for testing purposes.
 
 ## ✅ **Tasks**
-- [ ] Create image service for file operations (move, copy, delete)
-- [ ] Implement thumbnail generation using Sharp
+- [ ] Create image service for file operations (load from local files)
+- [ ] Implement thumbnail generation using Sharp (200x200px)
 - [ ] Set up organized file structure (images/, thumbnails/, temp/)
-- [ ] Create image display components in gallery
-- [ ] Add basic image loading and error handling
+- [ ] Build gallery UI with column slider (2-8 columns)
+- [ ] Add hover zoom functionality with configurable scale (100-200%)
+- [ ] Implement fullscreen image viewing with navigation
+- [ ] Add keyboard navigation (arrow keys, escape, scroll wheel)
+- [ ] Create image fallback handling for corrupted files
+- [ ] Add basic drag-and-drop file loading for testing
 
 ## 🧪 **Acceptance Criteria**
-- ✅ **UI**: Gallery shows actual image thumbnails in a grid
-- ✅ **Functionality**: Can navigate through images with arrow keys
-- ✅ **Files**: Images stored in organized directory structure
-- ✅ **Thumbnails**: Auto-generated 200x200 thumbnails for all images
-- ✅ **Performance**: Gallery loads within 2 seconds for 100 images
+- ✅ **UI**: Gallery displays images in responsive grid with column controls (2-8)
+- ✅ **Controls**: Column slider and hover zoom slider (100-200%) update instantly
+- ✅ **Interaction**: Hover zoom activates after 1 second with smooth scaling
+- ✅ **Navigation**: Arrow keys navigate, scroll wheel changes images in fullscreen
+- ✅ **Fullscreen**: Click image opens fullscreen with prev/next controls
+- ✅ **Files**: Images load from drag-and-drop or file selection
+- ✅ **Thumbnails**: Auto-generated 200x200 thumbnails cached locally
+- ✅ **Performance**: Gallery handles 1000 images smoothly (<2s load, 60fps scrolling)
 
 ## 🔧 **Technical Notes**
-- Use Sharp library for thumbnail generation
-- Implement proper error handling for corrupted images
-- Set up file watching for new images
-- Create basic image caching strategy
+- Mirror example-gallery.js behavior exactly (columns, zoom, fullscreen, navigation)
+- Use Sharp for thumbnail generation with proper error handling
+- Implement lazy loading for performance with 1000+ images
+- Add image caching to avoid regenerating thumbnails
+- Handle various image formats (JPEG, PNG, WebP, GIF)
+- Include fallback display for corrupted/unloadable images
 
 ## 📊 **Dependencies**
 - Sharp package (already installed)
-- File system utilities
-- Database image records (basic schema)
+- Database schema for basic image storage
+- File system utilities with async operations
+- Basic UI framework (existing CSS foundation)
 
 ## 🧪 **Testing Checklist**
-- [ ] Upload single image file
-- [ ] Verify thumbnail generation
-- [ ] Check gallery displays thumbnails
-- [ ] Test keyboard navigation
-- [ ] Verify error handling for invalid files
-- [ ] Performance test with 100 images
+- [ ] Drag and drop image files onto gallery area
+- [ ] Adjust column slider (2-8) and verify grid updates
+- [ ] Adjust zoom slider and hover over images to test scaling
+- [ ] Click images to enter fullscreen mode
+- [ ] Use arrow keys to navigate in fullscreen
+- [ ] Use scroll wheel to change images in fullscreen
+- [ ] Test with 1000 images (performance check)
+- [ ] Verify error handling for corrupted files
+- [ ] Test keyboard shortcuts (Escape to exit fullscreen)
 
 ## 📈 **Success Metrics**
-- Gallery loads in <2 seconds
-- Thumbnails generate in <500ms per image
-- No crashes on corrupted files
-- Smooth keyboard navigation
+- Gallery loads 1000 images in <2 seconds
+- Thumbnail generation <200ms per image
+- 60fps smooth scrolling and hover effects
+- Zero crashes on corrupted images
+- Full keyboard navigation support
+- Memory usage <500MB with 1000 images
