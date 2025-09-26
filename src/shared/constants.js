@@ -4,8 +4,7 @@ const os = require('os');
 
 // Application directories
 const APP_NAME = 'image-gallery-manager';
-// Note: APP_DATA_DIR is now set dynamically in main process using app.getPath('userData')
-// to respect platform-specific conventions (~/Library/Application Support on macOS, etc.)
+const APP_DATA_DIR = 'image-gallery-manager'; // Relative path, full path built in config.js
 const DATABASE_DIR = 'data';
 const IMAGES_DIR = 'images';
 const THUMBNAILS_DIR = 'thumbnails';
