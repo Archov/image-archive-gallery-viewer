@@ -26,13 +26,16 @@ Create a premium image viewing experience with column controls, hover zoom, full
 - ✅ **Files**: Images load from drag-and-drop or file selection
 - ✅ **Quality**: Images display at full quality with smart scaling to fit columns
 - ✅ **Aspect Ratio**: All images display in native aspect ratio with proper scaling
-- ✅ **Performance**: Gallery handles 1000 images smoothly (<3s load, 60fps scrolling)
+- ✅ **Performance**: Gallery handles 1000+ images with instant loading (<1s initial, 60fps scrolling)
 
 ## 🔧 **Technical Notes**
 - Mirror example-gallery.js behavior exactly (columns, zoom, fullscreen, navigation)
 - Use smart scaling: fit images to column width while maintaining aspect ratio
-- Implement lazy loading for performance with 1000+ images
-- Load images at display size for optimal performance
+- Implement intelligent lazy loading: maintain +/- 3 pages in memory (minimum 100 images)
+- Automatic load/unload based on scroll position and direction prediction
+- Preload ahead of scroll direction for seamless experience
+- Memory management: unload distant images, keep viewport and nearby images loaded
+- Load images at display size for optimal performance and memory usage
 - Handle various image formats (JPEG, PNG, WebP, GIF)
 - Include fallback display for corrupted/unloadable images
 - Gallery grid must accommodate varying aspect ratios naturally
@@ -52,17 +55,24 @@ Create a premium image viewing experience with column controls, hover zoom, full
 - [ ] Click images to enter fullscreen mode
 - [ ] Use arrow keys to navigate in fullscreen
 - [ ] Use scroll wheel to change images in fullscreen
-- [ ] Test with 1000 images (performance check)
+- [ ] Test with 1000+ images (performance check)
+- [ ] Verify intelligent lazy loading (100-300 images in memory)
+- [ ] Test rapid scrolling - loading should be seamless
+- [ ] Monitor memory usage stays under 500MB
 - [ ] Verify error handling for corrupted files
 - [ ] Test keyboard shortcuts (Escape to exit fullscreen)
 - [ ] Confirm no compression artifacts in displayed images
+- [ ] Test loading/unloading by scrolling back and forth
 
 ## 📈 **Success Metrics**
-- Gallery loads 1000 images in <3 seconds (lazy loading)
-- Image scaling/rendering <100ms per image
+- Gallery initial load <1 second (loads first 100 images instantly)
+- Seamless scrolling through 1000+ images with zero loading pauses
+- Intelligent loading: maintains 100-300 images in memory based on viewport
+- Memory usage <500MB with 1000+ images loaded
+- Image scaling/rendering <50ms per image
 - 60fps smooth scrolling and hover effects
 - Zero crashes on corrupted images
 - Full keyboard navigation support
-- Memory usage <500MB with 1000 images
 - Pristine image quality with no compression artifacts
 - Perfect aspect ratio preservation
+- Lazy loading invisible except at extreme scroll speeds
