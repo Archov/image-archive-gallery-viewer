@@ -22,16 +22,17 @@
   "author": "You",
   "license": "MIT",
   "devDependencies": {
+    "@electron/rebuild": "^4.0.1",
     "electron": "^28.1.0",
     "electron-builder": "^24.9.1"
   },
   "dependencies": {
-    "better-sqlite3": "^9.0.0",
-    "sharp": "^0.33.0",
-    "uuid": "^9.0.1",
     "adm-zip": "^0.5.10",
+    "better-sqlite3": "^9.0.0",
+    "node-7z": "^3.0.0",
     "node-unrar-js": "^2.0.0",
-    "node-7z": "^3.0.0"
+    "sharp": "^0.33.0",
+    "uuid": "^9.0.1"
   },
   "build": {
     "appId": "com.yourname.image-gallery-manager",

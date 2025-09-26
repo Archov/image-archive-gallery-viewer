@@ -1,9 +1,8 @@
 const Database = require('better-sqlite3');
 const fs = require('fs').promises;
 const path = require('path');
+const config = require('./config');
 const {
-  DATABASE_FILE,
-  DATABASE_DIR,
   DEFAULT_SETTINGS
 } = require('../shared/constants');
 
@@ -18,10 +17,14 @@ class DatabaseService {
 
     try {
       // Ensure database directory exists
-      await fs.mkdir(DATABASE_DIR, { recursive: true });
+      await fs.mkdir(config.paths.database, { recursive: true });
 
       // Open database
-      this.db = new Database(DATABASE_FILE);
+      const databaseFile = path.join(config.paths.database, 'gallery.db');
+      this.db = new Database(databaseFile);
+
+      // Enforce foreign key constraints
+      this.db.pragma('foreign_keys = ON');
 
       // Enable WAL mode for better concurrency
       try {

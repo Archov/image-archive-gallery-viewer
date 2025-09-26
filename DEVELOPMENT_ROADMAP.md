@@ -14,202 +14,297 @@ Transform the simple archive viewer into a comprehensive image gallery managemen
 
 ---
 
-## 📋 **Phase 1: Core Infrastructure**
+## 📋 **PR 1: Image File Management & Basic Gallery**
 
-### **Database Architecture**
-- [ ] Install and configure better-sqlite3
-- [ ] Design SQLite schema with proper normalization
-- [ ] Implement database service with migrations
-- [ ] Create database initialization and backup system
-- [ ] Add full-text search capabilities for metadata
+### **Description**
+Implement core image file handling and basic gallery display to replace the placeholder UI.
 
-### **Basic Image Storage**
-- [ ] Implement image file management (originals + thumbnails)
-- [ ] Create thumbnail generation system
-- [ ] Set up organized file structure (by date/source)
-- [ ] Implement basic image metadata extraction
+### **Tasks**
+- [ ] Create image service for file operations (move, copy, delete)
+- [ ] Implement thumbnail generation using Sharp
+- [ ] Set up organized file structure (images/, thumbnails/, temp/)
+- [ ] Create image display components in gallery
+- [ ] Add basic image loading and error handling
 
-### **Foundation Services**
-- [ ] Refactor IPC communication layer
-- [ ] Update config system for new paths and settings
-- [ ] Implement basic error handling and logging
-- [ ] Create utility functions for file operations
+### **Acceptance Criteria**
+- ✅ **UI**: Gallery shows actual image thumbnails in a grid
+- ✅ **Functionality**: Can navigate through images with arrow keys
+- ✅ **Files**: Images stored in organized directory structure
+- ✅ **Thumbnails**: Auto-generated 200x200 thumbnails for all images
+- ✅ **Performance**: Gallery loads within 2 seconds for 100 images
 
 ---
 
-## 📋 **Phase 2: Ingestion Systems**
+## 📋 **PR 2: Archive Ingestion System**
 
-### **Archive Processing**
-- [ ] Reuse and adapt existing archive extraction service
-- [ ] Implement archive metadata extraction and storage
-- [ ] Create batch archive processing with progress tracking
-- [ ] Add support for nested archives and complex structures
+### **Description**
+Implement archive file processing and ingestion with progress tracking.
 
-### **URL-Based Ingestion**
-- [ ] Enhance download service for bulk operations
-- [ ] Implement URL validation and duplicate detection
-- [ ] Create download queue management
-- [ ] Add retry logic and error recovery
+### **Tasks**
+- [ ] Create archive extraction service using existing libraries
+- [ ] Implement batch archive processing with progress callbacks
+- [ ] Add archive metadata extraction (file count, size, type)
+- [ ] Create archive ingestion UI with drag-and-drop
+- [ ] Store archive metadata in database
 
-### **Web Page Extractors**
-- [ ] Design extensible extractor framework
-- [ ] Implement basic image URL extraction
-- [ ] Create metadata parsing from page content
-- [ ] Add support for common gallery sites
-
----
-
-## 📋 **Phase 3: Metadata Management**
-
-### **Tag System Architecture**
-- [ ] Implement tag CRUD operations
-- [ ] Create tag categories (character, series, artist, clothing, position)
-- [ ] Build tag usage tracking and suggestions
-- [ ] Add tag color coding and organization
-
-### **Image Metadata**
-- [ ] Implement per-image metadata storage
-- [ ] Create metadata inheritance from archives/sources
-- [ ] Add bulk metadata operations
-- [ ] Implement metadata validation and sanitization
-
-### **Mass Editing Interface**
-- [ ] Design bulk selection system
-- [ ] Create tag assignment dialogs
-- [ ] Implement batch metadata updates
-- [ ] Add undo/redo for bulk operations
+### **Acceptance Criteria**
+- ✅ **UI**: Drag-and-drop archive files onto import area
+- ✅ **Functionality**: Archives extract with progress bar showing
+- ✅ **Database**: Archive records created with metadata
+- ✅ **Gallery**: Extracted images appear in gallery automatically
+- ✅ **Error Handling**: Clear error messages for corrupted/invalid archives
 
 ---
 
-## 📋 **Phase 4: Query and Organization**
+## 📋 **PR 3: Tag System Foundation**
 
-### **Query System**
-- [ ] Implement tag-based filtering (AND/OR logic)
-- [ ] Create complex query builder interface
-- [ ] Add full-text search across metadata
-- [ ] Implement saved query presets
+### **Description**
+Implement basic tag CRUD operations and per-image tagging.
 
-### **Set Management**
-- [ ] Design set data structure and relationships
-- [ ] Implement set creation and management
-- [ ] Create set-aware sorting and grouping
+### **Tasks**
+- [ ] Create tag management service (create, read, update, delete)
+- [ ] Implement tag categories (character, series, artist, clothing, position)
+- [ ] Add tag assignment to individual images
+- [ ] Create tag list UI in sidebar
+- [ ] Implement tag usage tracking
+
+### **Acceptance Criteria**
+- ✅ **UI**: Tag management panel in sidebar with add/edit/delete buttons
+- ✅ **Functionality**: Click image → assign tags from dropdown
+- ✅ **Database**: Tags stored with categories and usage counts
+- ✅ **Persistence**: Tags persist across application restarts
+- ✅ **Search**: Can filter gallery by single tag
+
+---
+
+## 📋 **PR 4: Bulk Tag Operations**
+
+### **Description**
+Add mass tag assignment and bulk editing capabilities.
+
+### **Tasks**
+- [ ] Implement multi-select in gallery (checkboxes)
+- [ ] Create bulk tag assignment dialog
+- [ ] Add tag removal operations
+- [ ] Implement tag suggestions based on usage
+- [ ] Add undo functionality for bulk operations
+
+### **Acceptance Criteria**
+- ✅ **UI**: Select multiple images → "Add Tags" button → bulk assignment
+- ✅ **Functionality**: Bulk remove tags from selected images
+- ✅ **UX**: Tag suggestions appear as you type
+- ✅ **Undo**: "Undo" button reverses last bulk operation
+- ✅ **Performance**: Bulk operations complete within 2 seconds for 100 images
+
+---
+
+## 📋 **PR 5: Basic Query System**
+
+### **Description**
+Implement tag-based filtering and simple search.
+
+### **Tasks**
+- [ ] Create query builder with tag selection
+- [ ] Implement AND/OR logic for multiple tags
+- [ ] Add full-text search across image metadata
+- [ ] Create saved search presets
+- [ ] Update gallery to show filtered results
+
+### **Acceptance Criteria**
+- ✅ **UI**: Query builder above gallery with tag checkboxes
+- ✅ **Functionality**: Filter by "character:alice AND artist:bob"
+- ✅ **Search**: Text search finds images by filename/metadata
+- ✅ **Presets**: Save/load common queries
+- ✅ **Results**: Filter results update gallery instantly
+
+---
+
+## 📋 **PR 6: URL-Based Ingestion**
+
+### **Description**
+Add ability to download and import images directly from URLs.
+
+### **Tasks**
+- [ ] Create URL validation and processing service
+- [ ] Implement download queue with progress tracking
+- [ ] Add duplicate detection (URL/filename based)
+- [ ] Create URL import UI with batch input
+- [ ] Handle various image formats and error cases
+
+### **Acceptance Criteria**
+- ✅ **UI**: Text area for pasting multiple URLs
+- ✅ **Functionality**: Downloads show progress, appear in gallery when complete
+- ✅ **Duplicate Detection**: Same URL won't download twice
+- ✅ **Error Handling**: Invalid URLs show clear error messages
+- ✅ **Batch**: Can import 10+ URLs simultaneously
+
+---
+
+## 📋 **PR 7: Set Management**
+
+### **Description**
+Implement image grouping and set-based organization.
+
+### **Tasks**
+- [ ] Create set data structure and database tables
+- [ ] Implement set creation from selected images
+- [ ] Add set-aware gallery sorting (keep sets together)
+- [ ] Create set management UI
 - [ ] Add set import/export capabilities
 
-### **Smart Organization**
-- [ ] Implement favorite prioritization
-- [ ] Create custom sort orders
-- [ ] Add grouping by various criteria
-- [ ] Implement virtual collections
+### **Acceptance Criteria**
+- ✅ **UI**: "Create Set" button for selected images
+- ✅ **Functionality**: Sets appear as grouped items in gallery
+- ✅ **Sorting**: Set order preserved in gallery view
+- ✅ **Management**: Rename, delete, reorder sets
+- ✅ **Export**: Export set as new archive file
 
 ---
 
-## 📋 **Phase 5: Browser Integration**
+## 📋 **PR 8: Advanced Gallery Features**
 
-### **Custom Protocol Handler**
-- [ ] Register `archive-gallery://` protocol in Electron
-- [ ] Implement protocol data parsing and validation
-- [ ] Create secure data transfer mechanisms
+### **Description**
+Enhance gallery with better organization and user experience.
+
+### **Tasks**
+- [ ] Implement favorite starring system
+- [ ] Add custom sort options (date, name, size, etc.)
+- [ ] Create grid/list view toggle
+- [ ] Add keyboard shortcuts for navigation
+- [ ] Implement virtual scrolling for performance
+
+### **Acceptance Criteria**
+- ✅ **UI**: Star button on images, favorites filter
+- ✅ **Sorting**: Multiple sort options with visual indicators
+- ✅ **Views**: Toggle between grid and list layouts
+- ✅ **Navigation**: Arrow keys, page up/down work
+- ✅ **Performance**: Smooth scrolling with 1000+ images
+
+---
+
+## 📋 **PR 9: Custom Protocol Handler**
+
+### **Description**
+Implement browser integration with custom protocol for sending content.
+
+### **Tasks**
+- [ ] Register `image-gallery://` protocol in Electron
+- [ ] Create protocol data parsing and validation
+- [ ] Implement secure data transfer from browser
 - [ ] Add protocol handler error recovery
+- [ ] Create basic userscript template
 
-### **Userscript Development**
-- [ ] Design userscript architecture for major browsers
-- [ ] Implement page content analysis
-- [ ] Create metadata extraction from DOM
-- [ ] Add userscript installation and updates
-
-### **Web Page Integration**
-- [ ] Implement injection buttons for gallery sites
-- [ ] Create metadata parsing for supported platforms
-- [ ] Add bulk selection and transfer
-- [ ] Implement progress feedback during transfer
+### **Acceptance Criteria**
+- ✅ **Protocol**: Clicking `image-gallery://import?url=...` opens app
+- ✅ **Data Transfer**: URL and metadata passed from browser to app
+- ✅ **Security**: Malformed data rejected with error message
+- ✅ **Integration**: Basic bookmarklet can send page URL
+- ✅ **Feedback**: Success/error notifications in both browser and app
 
 ---
 
-## 📋 **Phase 6: User Interface**
+## 📋 **PR 10: Web Page Extractors**
 
-### **Gallery View Redesign**
-- [ ] Implement metadata-rich gallery display
-- [ ] Create advanced filtering controls
-- [ ] Add thumbnail selection and bulk operations
-- [ ] Implement keyboard shortcuts and navigation
+### **Description**
+Create system to extract images and metadata from web pages.
 
-### **Metadata Editing**
-- [ ] Design per-image metadata editor
-- [ ] Create tag assignment interface
-- [ ] Implement bulk editing panels
-- [ ] Add metadata preview and validation
+### **Tasks**
+- [ ] Design extensible extractor framework
+- [ ] Implement basic image URL extraction
+- [ ] Add metadata parsing (titles, artists, etc.)
+- [ ] Create extractors for common gallery sites
+- [ ] Add bulk extraction with progress
 
-### **Query Interface**
-- [ ] Build query builder with visual components
-- [ ] Create saved search management
-- [ ] Implement query result organization
-- [ ] Add export and sharing capabilities
+### **Acceptance Criteria**
+- ✅ **Framework**: Easy to add new site extractors
+- ✅ **Basic**: Extract all image URLs from any webpage
+- ✅ **Smart**: Parse artist names, titles from page content
+- ✅ **Batch**: Extract from multiple pages simultaneously
+- ✅ **Preview**: Show extracted images before import
 
 ---
 
-## 📋 **Phase 7: Optimization Integration**
+## 📋 **PR 11: CbxTools Integration**
 
-### **CbxTools Integration**
-- [ ] Analyze CbxTools API and capabilities
-- [ ] Design compression pipeline architecture
+### **Description**
+Integrate CbxTools for automatic image compression and optimization.
+
+### **Tasks**
+- [ ] Analyze CbxTools API and command-line interface
+- [ ] Create compression service wrapper
 - [ ] Implement automatic compression rules
-- [ ] Create compression queue management
+- [ ] Add compression queue management
+- [ ] Create settings for compression preferences
 
-### **Batch Processing**
-- [ ] Implement background compression jobs
-- [ ] Create compression progress tracking
-- [ ] Add compression quality settings
-- [ ] Implement compression undo/revert
-
-### **Storage Optimization**
-- [ ] Design deduplication system
-- [ ] Implement format conversion pipeline
-- [ ] Create storage usage monitoring
-- [ ] Add cleanup and maintenance tools
+### **Acceptance Criteria**
+- ✅ **Integration**: CbxTools processes images automatically
+- ✅ **Settings**: Configure compression quality, formats
+- ✅ **Queue**: Background processing with progress tracking
+- ✅ **Results**: Compressed images smaller with no quality loss visible
+- ✅ **Revert**: Ability to restore original uncompressed versions
 
 ---
 
-## 📋 **Phase 8: Advanced Features**
+## 📋 **PR 12: Import/Export System**
 
-### **Import/Export System**
-- [ ] Implement data export in multiple formats
-- [ ] Create import from other gallery systems
-- [ ] Add metadata backup and restore
-- [ ] Implement cross-platform compatibility
+### **Description**
+Add ability to export gallery data and import from other systems.
 
-### **Performance Optimization**
-- [ ] Implement database query optimization
-- [ ] Create thumbnail caching system
-- [ ] Add lazy loading for large galleries
-- [ ] Optimize memory usage for large libraries
+### **Tasks**
+- [ ] Implement JSON export of gallery data
+- [ ] Create CSV export for metadata
+- [ ] Add archive export with metadata preservation
+- [ ] Implement basic import from other gallery formats
+- [ ] Add backup/restore functionality
 
-### **Extensibility Framework**
-- [ ] Design plugin architecture
-- [ ] Create custom extractor development kit
-- [ ] Implement theme and customization system
-- [ ] Add API for third-party integrations
+### **Acceptance Criteria**
+- ✅ **Export**: Download complete gallery as JSON + images
+- ✅ **Import**: Restore from exported JSON backup
+- ✅ **Formats**: Export metadata as CSV for external tools
+- ✅ **Archives**: Export sets as CBZ files with metadata
+- ✅ **Validation**: Import validates data integrity
 
 ---
 
-## 📋 **Phase 9: Quality Assurance**
+## 📋 **PR 13: Performance Optimization**
 
-### **Testing Infrastructure**
-- [ ] Implement unit test framework
-- [ ] Create integration tests for key workflows
-- [ ] Add performance benchmarking
-- [ ] Implement automated testing pipeline
+### **Description**
+Optimize for large libraries with thousands of images.
 
-### **User Experience Polish**
-- [ ] Conduct usability testing
+### **Tasks**
+- [ ] Implement lazy loading for gallery
+- [ ] Add thumbnail caching and optimization
+- [ ] Optimize database queries with proper indexing
+- [ ] Implement virtual scrolling
+- [ ] Add memory usage monitoring
+
+### **Acceptance Criteria**
+- ✅ **Performance**: Gallery loads in <2 seconds with 10,000 images
+- ✅ **Memory**: App uses <500MB RAM with large libraries
+- ✅ **Scrolling**: Smooth scrolling with 100,000+ thumbnails
+- ✅ **Search**: Sub-second responses for complex queries
+- ✅ **Caching**: Thumbnails load instantly on second view
+
+---
+
+## 📋 **PR 14: Advanced Features**
+
+### **Description**
+Add final polish and advanced capabilities.
+
+### **Tasks**
+- [ ] Implement plugin architecture
+- [ ] Add theme customization
+- [ ] Create advanced query builder UI
+- [ ] Add keyboard shortcuts reference
 - [ ] Implement accessibility features
-- [ ] Add comprehensive error handling
-- [ ] Create user documentation and tutorials
 
-### **Stability and Reliability**
-- [ ] Implement comprehensive error recovery
-- [ ] Add data integrity validation
-- [ ] Create backup and restore procedures
-- [ ] Implement graceful degradation
+### **Acceptance Criteria**
+- ✅ **Themes**: Light/dark mode toggle
+- ✅ **Plugins**: Extensible extractor/plugin system
+- ✅ **Queries**: Visual query builder with drag-and-drop
+- ✅ **Accessibility**: Keyboard navigation, screen reader support
+- ✅ **Documentation**: Built-in help and keyboard shortcuts guide
 
 ---
 
@@ -244,16 +339,33 @@ data/
 
 ---
 
-## 🎯 **Success Metrics**
+## 📊 **PR Sizing Guidelines**
 
-- [ ] Efficient handling of 10,000+ images
-- [ ] Sub-second query responses for complex filters
-- [ ] Seamless browser integration
-- [ ] Intuitive mass metadata editing
-- [ ] Transparent image optimization
-- [ ] Robust data integrity and backup
-- [ ] Extensible architecture for future features
+### **Small PR (2-4 hours)**
+- Single feature implementation
+- Database schema changes
+- UI component additions
+- Basic service functions
+
+### **Medium PR (4-8 hours)**
+- Multi-component features
+- Complex UI interactions
+- Integration between systems
+- Performance optimizations
+
+### **Large PR (8-16 hours)**
+- Major architectural changes
+- Complex integrations (CbxTools, browser protocol)
+- Complete feature suites
+- Major UI redesigns
+
+### **Testing Requirements**
+- ✅ **Manual QA**: Clear steps to verify functionality
+- ✅ **User Experience**: Feature works end-to-end as described
+- ✅ **Error Cases**: Proper error handling and user feedback
+- ✅ **Performance**: No regressions in load times or responsiveness
+- ✅ **Data Integrity**: Database operations preserve data consistency
 
 ---
 
-*This roadmap focuses on iterative development with working functionality at each phase. Each phase builds upon the previous, ensuring stability and usability throughout development.*
+*Each PR represents a complete, testable feature that delivers value to users and can be deployed independently.*

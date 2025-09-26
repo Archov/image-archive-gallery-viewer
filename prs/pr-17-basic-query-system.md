@@ -28,7 +28,7 @@ Implement tag-based filtering and simple search.
 - Update gallery with filtered results
 
 ## 📊 **Dependencies**
-- Tag system (PR 15)
+- Tag system foundation (PR 12)
 - Gallery component (PR 1)
 - Database FTS virtual table
 

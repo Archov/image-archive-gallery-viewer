@@ -141,7 +141,15 @@ handlers[IPC_CHANNELS.SYSTEM_GET_INFO] = () => {
 
 handlers[IPC_CHANNELS.SYSTEM_OPEN_EXTERNAL] = async (event, url) => {
   const { shell } = require('electron');
+
+  // Validate URL scheme to prevent security issues
   try {
+    const urlObj = new URL(url);
+    // Only allow http and https schemes
+    if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+      return { success: false, error: 'Invalid URL scheme. Only http and https are allowed.' };
+    }
+
     await shell.openExternal(url);
     return { success: true };
   } catch (error) {

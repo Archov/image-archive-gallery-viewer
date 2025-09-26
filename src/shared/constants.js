@@ -4,12 +4,13 @@ const os = require('os');
 
 // Application directories
 const APP_NAME = 'image-gallery-manager';
-const APP_DATA_DIR = path.join(os.homedir(), '.image-gallery-manager');
-const DATABASE_DIR = path.join(APP_DATA_DIR, 'data');
-const IMAGES_DIR = path.join(APP_DATA_DIR, 'images');
-const THUMBNAILS_DIR = path.join(APP_DATA_DIR, 'thumbnails');
-const TEMP_DIR = path.join(APP_DATA_DIR, 'temp');
-const LOGS_DIR = path.join(APP_DATA_DIR, 'logs');
+// Note: APP_DATA_DIR is now set dynamically in main process using app.getPath('userData')
+// to respect platform-specific conventions (~/Library/Application Support on macOS, etc.)
+const DATABASE_DIR = 'data';
+const IMAGES_DIR = 'images';
+const THUMBNAILS_DIR = 'thumbnails';
+const TEMP_DIR = 'temp';
+const LOGS_DIR = 'logs';
 
 // Database files
 const DATABASE_FILE = path.join(DATABASE_DIR, 'gallery.db');
@@ -57,6 +58,10 @@ const IPC_CHANNELS = {
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_CLOSE: 'window:close',
   WINDOW_OPEN_DEVTOOLS: 'window:open-devtools',
+
+  // Settings operations
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET: 'settings:set',
 
   // System operations
   SYSTEM_GET_INFO: 'system:get-info',

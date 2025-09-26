@@ -287,6 +287,9 @@ class ImageGalleryManager {
                 this.showSettingsView();
                 break;
         }
+
+        // Keep currentView in sync
+        this.currentView = view;
     }
 
     showGalleryView() {

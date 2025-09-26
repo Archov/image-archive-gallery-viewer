@@ -1,6 +1,6 @@
 const path = require('path');
+const { app } = require('electron');
 const {
-  APP_DATA_DIR,
   DATABASE_DIR,
   IMAGES_DIR,
   THUMBNAILS_DIR,
@@ -29,15 +29,15 @@ const config = {
   // Development settings
   isDevelopment: process.env.NODE_ENV === 'development',
 
-  // Directory paths
+  // Directory paths - constructed dynamically using Electron's userData
   paths: {
-    appData: APP_DATA_DIR,
-    database: DATABASE_DIR,
-    images: IMAGES_DIR,
-    thumbnails: THUMBNAILS_DIR,
-    temp: TEMP_DIR,
-    logs: LOGS_DIR,
-    userData: APP_DATA_DIR
+    appData: path.join(app.getPath('userData'), 'image-gallery-manager'),
+    database: path.join(app.getPath('userData'), 'image-gallery-manager', DATABASE_DIR),
+    images: path.join(app.getPath('userData'), 'image-gallery-manager', IMAGES_DIR),
+    thumbnails: path.join(app.getPath('userData'), 'image-gallery-manager', THUMBNAILS_DIR),
+    temp: path.join(app.getPath('userData'), 'image-gallery-manager', TEMP_DIR),
+    logs: path.join(app.getPath('userData'), 'image-gallery-manager', LOGS_DIR),
+    userData: app.getPath('userData')
   },
 
   // Performance settings

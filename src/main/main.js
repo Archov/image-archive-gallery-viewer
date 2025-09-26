@@ -57,6 +57,9 @@ function registerCustomProtocol() {
     // TODO: Handle custom protocol requests for browser integration
     // This will be used by the userscript to send data to the gallery
     console.log('Custom protocol request:', request.url);
+
+    // Must call callback to prevent hanging requests
+    callback({ error: -6 }); // net::ERR_FILE_NOT_FOUND placeholder
   });
 }
 
@@ -120,11 +123,22 @@ app.on('activate', () => {
 app.on('before-quit', async (event) => {
   isQuitting = true;
 
-  // Close database connections
-  databaseService.close();
+  // Prevent quit until cleanup is complete
+  event.preventDefault();
 
-  // Perform cleanup
-  await performCleanup();
+  try {
+    // Close database connections
+    databaseService.close();
+
+    // Perform cleanup
+    await performCleanup();
+
+    // Now allow the quit to proceed
+    app.quit();
+  } catch (error) {
+    console.error('Cleanup failed, forcing quit:', error);
+    app.quit();
+  }
 });
 
 // Graceful shutdown handling

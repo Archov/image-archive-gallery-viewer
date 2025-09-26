@@ -34,7 +34,7 @@ Create a professional, distraction-free interface where controls automatically h
 
 ## 📊 **Dependencies**
 - PR 1: Basic gallery and fullscreen functionality
-- PR 2: Gallery controls (optional)
+- PR 3: Gallery controls (optional)
 - CSS animation capabilities
 - Event timing utilities
 

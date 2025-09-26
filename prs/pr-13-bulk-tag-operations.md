@@ -29,7 +29,7 @@ Add mass tag assignment and bulk editing capabilities.
 
 ## 📊 **Dependencies**
 - Gallery component (PR 1)
-- Tag system (PR 15)
+- Tag system foundation (PR 12)
 - Database transaction support
 
 ## 🧪 **Testing Checklist**

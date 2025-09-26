@@ -91,7 +91,7 @@
             <div>Initializing Image Gallery Manager...</div>
             <div id="loading-status">Loading database</div>
         </div>
-        <div class="loading-version">v2.0.0</div>
+        <div class="loading-version" id="loading-version">Loading...</div>
     </div>
 
     <!-- Main Application Container -->
@@ -119,22 +119,28 @@
             }
         }
 
-        // Make loading functions available globally for the main script
-        window.loadingUtils = {
-            updateStatus: updateLoadingStatus,
-            hide: () => {
-                const loading = document.getElementById('loading');
-                const app = document.getElementById('app');
+// Make loading functions available globally for the main script
+window.loadingUtils = {
+    updateStatus: updateLoadingStatus,
+    hide: () => {
+        const loading = document.getElementById('loading');
+        const app = document.getElementById('app');
 
-                if (loading) {
-                    loading.classList.add('loading-hidden');
-                }
+        // Update version display before hiding
+        const versionEl = document.getElementById('loading-version');
+        if (versionEl && window.appVersion) {
+            versionEl.textContent = `v${window.appVersion.app}`;
+        }
 
-                if (app) {
-                    app.classList.add('loaded');
-                }
-            }
-        };
+        if (loading) {
+            loading.classList.add('loading-hidden');
+        }
+
+        if (app) {
+            app.classList.add('loaded');
+        }
+    }
+};
 
         // Start loading
         updateLoadingStatus('Initializing...');

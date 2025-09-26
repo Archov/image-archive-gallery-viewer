@@ -101,7 +101,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 });
 
 // Expose version info
-contextBridge.exposeInMainWorld('appVersion', process.versions);
+contextBridge.exposeInMainWorld('appVersion', {
+  ...process.versions,
+  app: require('../../../package.json').version
+});
 
 // Log that preload script loaded successfully
 console.log('Preload script loaded successfully');
