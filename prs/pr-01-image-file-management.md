@@ -8,7 +8,7 @@ Create a fully interactive gallery with column controls, hover zoom, fullscreen 
 
 ## ✅ **Tasks**
 - [ ] Create image service for file operations (load from local files)
-- [ ] Implement thumbnail generation using Sharp (max 400px, maintain aspect ratio)
+- [ ] Implement thumbnail generation using Sharp (max 600px, maintain aspect ratio)
 - [ ] Set up organized file structure (images/, thumbnails/, temp/)
 - [ ] Build gallery UI with column slider (2-10 columns)
 - [ ] Add hover zoom functionality with configurable scale (100-200%)
@@ -24,13 +24,13 @@ Create a fully interactive gallery with column controls, hover zoom, fullscreen 
 - ✅ **Navigation**: Arrow keys navigate, scroll wheel changes images in fullscreen
 - ✅ **Fullscreen**: Click image opens fullscreen with prev/next controls
 - ✅ **Files**: Images load from drag-and-drop or file selection
-- ✅ **Thumbnails**: Auto-generated thumbnails (max 400px, maintain aspect ratio) cached locally
+- ✅ **Thumbnails**: Auto-generated thumbnails (max 600px, maintain aspect ratio) cached locally
 - ✅ **Aspect Ratio**: All images display in native aspect ratio (thumbnails and fullscreen)
 - ✅ **Performance**: Gallery handles 1000 images smoothly (<2s load, 60fps scrolling)
 
 ## 🔧 **Technical Notes**
 - Mirror example-gallery.js behavior exactly (columns, zoom, fullscreen, navigation)
-- Use Sharp for thumbnail generation with aspect ratio preservation (max 400px on longest side)
+- Use Sharp for thumbnail generation with aspect ratio preservation (max 600px on longest side)
 - Implement lazy loading for performance with 1000+ images
 - Add image caching to avoid regenerating thumbnails
 - Handle various image formats (JPEG, PNG, WebP, GIF)
@@ -56,7 +56,7 @@ Create a fully interactive gallery with column controls, hover zoom, fullscreen 
 
 ## 📈 **Success Metrics**
 - Gallery loads 1000 images in <2 seconds
-- Thumbnail generation <500ms per image (aspect ratio preserved)
+- Thumbnail generation <800ms per image (aspect ratio preserved)
 - 60fps smooth scrolling and hover effects
 - Zero crashes on corrupted images
 - Full keyboard navigation support
