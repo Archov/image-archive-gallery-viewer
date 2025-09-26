@@ -29,7 +29,7 @@ Create a premium image viewing experience with column controls, hover zoom, full
 - ✅ **Interaction**: Hover zoom activates after 1 second with smooth scaling
 - ✅ **Navigation**: Arrow keys navigate, scroll wheel changes images in fullscreen
 - ✅ **Fullscreen**: Click image opens immersive fullscreen with auto-hiding controls
-- ✅ **Distraction-Free**: UI fades away during viewing, reappears on mouse movement
+- ✅ **Distraction-Free**: UI fades after 3 seconds of inactivity, reappears on mouse proximity to edges
 - ✅ **Information**: Press 'I' to show/hide image info overlay (dimensions, size, format)
 - ✅ **Gestures**: Drag horizontally to navigate images, mouse wheel for zoom
 - ✅ **Keyboard**: HJKL for navigation, Space for next, Shift+Space for previous
@@ -46,7 +46,7 @@ Create a premium image viewing experience with column controls, hover zoom, full
 - Preload ahead of scroll direction for seamless experience
 - Memory management: unload distant images, keep viewport and nearby images loaded
 - Load images at display size for optimal performance and memory usage
-- Implement distraction-free UI with auto-hiding controls and fade transitions
+- Implement distraction-free UI with proximity-based control visibility (3s inactivity timeout, edge proximity detection)
 - Add smooth image transitions and loading states for polished experience
 - Include image information overlay with metadata display
 - Implement advanced keyboard shortcuts (HJKL navigation, etc.)
@@ -75,7 +75,7 @@ Create a premium image viewing experience with column controls, hover zoom, full
 - [ ] Press 'I' to show/hide image information overlay
 - [ ] Test mouse drag gestures for navigation
 - [ ] Test mouse wheel for zoom in fullscreen
-- [ ] Test UI fade behavior (controls disappear during viewing)
+- [ ] Test UI fade behavior (controls disappear after 3s inactivity, reappear near edges)
 - [ ] Use scroll wheel to change images in fullscreen
 - [ ] Test with 1000+ images (performance check)
 - [ ] Verify intelligent lazy loading (100-300 images in memory)
@@ -90,7 +90,7 @@ Create a premium image viewing experience with column controls, hover zoom, full
 - Gallery initial load <1 second (loads first 100 images instantly)
 - Seamless scrolling through 1000+ images with zero loading pauses
 - Intelligent loading: maintains 100-300 images in memory based on viewport
-- Distraction-free experience: UI fades away, controls auto-hide
+- Distraction-free experience: UI fades after 3s inactivity, controls appear on edge proximity
 - Smooth transitions: 60fps animations and hover effects
 - Advanced navigation: HJKL keys, mouse gestures, Space navigation
 - Memory usage <500MB with 1000+ images loaded
