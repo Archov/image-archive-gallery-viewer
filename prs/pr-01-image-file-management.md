@@ -8,9 +8,9 @@ Create a fully interactive gallery with column controls, hover zoom, fullscreen 
 
 ## ✅ **Tasks**
 - [ ] Create image service for file operations (load from local files)
-- [ ] Implement thumbnail generation using Sharp (200x200px)
+- [ ] Implement thumbnail generation using Sharp (max 200px, maintain aspect ratio)
 - [ ] Set up organized file structure (images/, thumbnails/, temp/)
-- [ ] Build gallery UI with column slider (2-8 columns)
+- [ ] Build gallery UI with column slider (2-10 columns)
 - [ ] Add hover zoom functionality with configurable scale (100-200%)
 - [ ] Implement fullscreen image viewing with navigation
 - [ ] Add keyboard navigation (arrow keys, escape, scroll wheel)
@@ -18,22 +18,24 @@ Create a fully interactive gallery with column controls, hover zoom, fullscreen 
 - [ ] Add basic drag-and-drop file loading for testing
 
 ## 🧪 **Acceptance Criteria**
-- ✅ **UI**: Gallery displays images in responsive grid with column controls (2-8)
+- ✅ **UI**: Gallery displays images in responsive grid with column controls (2-10)
 - ✅ **Controls**: Column slider and hover zoom slider (100-200%) update instantly
 - ✅ **Interaction**: Hover zoom activates after 1 second with smooth scaling
 - ✅ **Navigation**: Arrow keys navigate, scroll wheel changes images in fullscreen
 - ✅ **Fullscreen**: Click image opens fullscreen with prev/next controls
 - ✅ **Files**: Images load from drag-and-drop or file selection
-- ✅ **Thumbnails**: Auto-generated 200x200 thumbnails cached locally
+- ✅ **Thumbnails**: Auto-generated thumbnails (max 200px, maintain aspect ratio) cached locally
+- ✅ **Aspect Ratio**: All images display in native aspect ratio (thumbnails and fullscreen)
 - ✅ **Performance**: Gallery handles 1000 images smoothly (<2s load, 60fps scrolling)
 
 ## 🔧 **Technical Notes**
 - Mirror example-gallery.js behavior exactly (columns, zoom, fullscreen, navigation)
-- Use Sharp for thumbnail generation with proper error handling
+- Use Sharp for thumbnail generation with aspect ratio preservation (max 200px on longest side)
 - Implement lazy loading for performance with 1000+ images
 - Add image caching to avoid regenerating thumbnails
 - Handle various image formats (JPEG, PNG, WebP, GIF)
 - Include fallback display for corrupted/unloadable images
+- Gallery grid must accommodate varying aspect ratios naturally
 
 ## 📊 **Dependencies**
 - Sharp package (already installed)
@@ -54,8 +56,9 @@ Create a fully interactive gallery with column controls, hover zoom, fullscreen 
 
 ## 📈 **Success Metrics**
 - Gallery loads 1000 images in <2 seconds
-- Thumbnail generation <200ms per image
+- Thumbnail generation <200ms per image (aspect ratio preserved)
 - 60fps smooth scrolling and hover effects
 - Zero crashes on corrupted images
 - Full keyboard navigation support
 - Memory usage <500MB with 1000 images
+- Visual appeal with natural aspect ratios maintained
