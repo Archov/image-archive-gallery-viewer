@@ -118,9 +118,8 @@ console.warn = (...args) => {
 const saveDebugLogs = () => {
   try {
     // Append main process logs to the existing file (which may already contain renderer logs)
-    const fs = require('node:fs')
     const mainLogsContent = `\n=== MAIN PROCESS LOGS (FINAL) ===\n${debugLogs.join('\n')}\n`
-    fs.appendFileSync(debugLogPath, mainLogsContent)
+    fsNative.appendFileSync(debugLogPath, mainLogsContent)
     originalConsoleLog(`[DEBUG] Main process logs saved to: ${debugLogPath}`)
   } catch (_e) {
     // ignore

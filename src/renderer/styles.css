@@ -40,7 +40,9 @@ body {
   justify-content: center;
   background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
   border: 2px dashed #444;
-  transition: all 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
 }
 
 #drop-zone.drag-over {
@@ -96,14 +98,11 @@ body {
   overflow-y: auto;
   padding: 2px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 2px;
   align-items: start;
   overflow-anchor: auto;
   contain: layout style;
-  /* GPU acceleration for smooth scrolling */
-  transform: translateZ(0);
-  will-change: scroll-position;
 }
 
 /* Additional performance optimizations */
@@ -115,18 +114,15 @@ body {
   background: #1a1a1a;
   cursor: pointer;
   contain: layout style paint;
-  /* GPU acceleration for smooth rendering */
-  transform: translateZ(0);
-  will-change: transform;
-  /* Optimize image rendering */
-  image-rendering: optimize-contrast;
   /* Disable dragging */
   -webkit-user-drag: none;
-  -moz-user-drag: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
   user-select: none;
+  /* Performance optimizations */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 /* No hover effects for better performance */
@@ -174,9 +170,6 @@ body {
   height: 100vh;
   object-fit: contain;
   background: #000;
-  /* GPU acceleration for smooth fullscreen navigation */
-  transform: translateZ(0);
-  will-change: transform;
   /* Optimize image rendering */
   image-rendering: optimize-contrast;
 }
@@ -193,6 +186,7 @@ body {
   border: none;
   font-size: 18px;
   cursor: pointer;
+  z-index: 20; /* above .nav-btn (z-index:10) */
 }
 
 .nav-btn {
@@ -281,6 +275,37 @@ body {
   }
   100% {
     transform: rotate(360deg);
+  }
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  .nav-btn {
+    transition: none;
+  }
+
+  #progress-fill {
+    transition: none;
+  }
+
+  #drop-zone {
+    transition: none;
+  }
+
+  #file-select-btn {
+    transition: none;
+  }
+
+  .load-archive-btn {
+    transition: none;
   }
 }
 
@@ -391,8 +416,12 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Performance optimizations */
-.gallery-image {
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
+/* Keyboard focus visibility */
+#close-fullscreen:focus-visible,
+.nav-btn:focus-visible,
+#file-select-btn:focus-visible,
+#archive-select-btn:focus-visible,
+.load-archive-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
 }

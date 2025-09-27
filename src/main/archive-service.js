@@ -218,8 +218,8 @@ class ArchiveService {
             usedNames.add(fileName)
             const outputPath = path.join(extractPath, fileName) // nosemgrep
 
-            // Extract file
-            zip.extractEntryTo(entry, extractPath, false, true)
+            // Extract file to collision-safe path
+            zip.extractEntryTo(entry, outputPath, false, true)
 
             extractedFiles.push({
               originalName: entry.entryName,
@@ -326,7 +326,9 @@ class ArchiveService {
 
           stream.on('progress', (progress) => {
             if (progressCallback) {
-              progressCallback(progress.percent, 100)
+              // Convert percentage to integer count for consistent API
+              const processedCount = Math.floor((progress.percent / 100) * 100) // Estimate based on percentage
+              progressCallback(processedCount, 100)
             }
           })
 
