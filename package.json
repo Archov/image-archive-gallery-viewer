@@ -16,7 +16,7 @@
     "lint-fix": "biome check --write .",
     "format": "biome format .",
     "format-write": "biome format --write .",
-    "security-scan": "opengrep.exe --config auto",
+    "security-scan": "opengrep --config auto",
     "analyze": "npm run lint && npm run security-scan"
   },
   "keywords": [

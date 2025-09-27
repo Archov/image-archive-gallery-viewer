@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsNative = require('fs');
 const os = require('os');
-const { performance } = require('node:perf_hooks');
+const { performance } = require('perf_hooks');
 const secureFs = require('./secure-fs');
 const archiveService = require('./archive-service');
 
@@ -51,7 +51,7 @@ async function loadAppConfig() {
 
 // Keep a global reference of the window object
 let mainWindow;
-let debugLogs = [];
+const debugLogs = [];
 const MAX_DEBUG_LOG_LINES = 5000;
 const debugLogPath = path.join(os.tmpdir(), `gallery-main-debug-${Date.now()}.txt`);
 
@@ -68,27 +68,27 @@ const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
 console.log = (...args) => {
-    const message = `[MAIN ${new Date().toISOString()}] ` + args.map(a => {
+    const message = `[MAIN ${new Date().toISOString()}] ${args.map(a => {
         try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch { return String(a); }
-    }).join(' ');
+    }).join(' ')}`;
     debugLogs.push(message);
     if (debugLogs.length > MAX_DEBUG_LOG_LINES) debugLogs.shift();
     originalConsoleLog.apply(console, args);
 };
 
 console.error = (...args) => {
-    const message = `[MAIN ERROR ${new Date().toISOString()}] ` + args.map(a => {
+    const message = `[MAIN ERROR ${new Date().toISOString()}] ${args.map(a => {
         try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch { return String(a); }
-    }).join(' ');
+    }).join(' ')}`;
     debugLogs.push(message);
     if (debugLogs.length > MAX_DEBUG_LOG_LINES) debugLogs.shift();
     originalConsoleError.apply(console, args);
 };
 
 console.warn = (...args) => {
-    const message = `[MAIN WARN ${new Date().toISOString()}] ` + args.map(a => {
+    const message = `[MAIN WARN ${new Date().toISOString()}] ${args.map(a => {
         try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch { return String(a); }
-    }).join(' ');
+    }).join(' ')}`;
     debugLogs.push(message);
     if (debugLogs.length > MAX_DEBUG_LOG_LINES) debugLogs.shift();
     originalConsoleWarn.apply(console, args);
@@ -98,11 +98,11 @@ console.warn = (...args) => {
 const saveDebugLogs = () => {
     try {
         // Append main process logs to the existing file (which may already contain renderer logs)
-        const fs = require('fs');
-        const mainLogsContent = '\n=== MAIN PROCESS LOGS (FINAL) ===\n' + debugLogs.join('\n') + '\n';
+        const fs = require('node:fs');
+        const mainLogsContent = `\n=== MAIN PROCESS LOGS (FINAL) ===\n${debugLogs.join('\n')}\n`;
         fs.appendFileSync(debugLogPath, mainLogsContent);
         originalConsoleLog(`[DEBUG] Main process logs saved to: ${debugLogPath}`);
-    } catch (e) {
+    } catch (_e) {
         // ignore
     }
 };
@@ -179,7 +179,7 @@ app.whenReady().then(async () => {
   // Create data directories
   const userDataDir = app.getPath('userData');
   const imagesDir = path.join(userDataDir, 'images');
-  const tempDir = app.getPath('temp');
+  const tempDir = path.join(app.getPath('temp'), 'image-archive-viewer');
 
   try {
     await fs.mkdir(imagesDir, { recursive: true });
@@ -267,15 +267,21 @@ ipcMain.handle('read-file', async (event, filePath) => {
     console.log(`[DEBUG] IPC read-file called for: ${displayName}`);
     const startTime = performance.now();
 
-    // Get file stats first for size check (secureFs validates path automatically)
-    const stats = await secureFs.stat(filePath);
+    // SECURITY: Ensure path is within allowed directories (set via dialogs/init)
+    const validatedPath = secureFs.validateFilePath(filePath);
+    // Get file stats first for size check
+    const stats = await secureFs.stat(validatedPath);
     const maxFileSizeBytes = appConfig.maxFileSizeMB * 1024 * 1024;
     if (stats.size > maxFileSizeBytes) {
       throw new Error(`File too large: ${(stats.size / (1024 * 1024)).toFixed(2)} MB (limit: ${appConfig.maxFileSizeMB} MB)`);
     }
 
-    // Read file (secureFs validates path automatically)
-    const buffer = await secureFs.readFile(filePath);
+    // Read file (after validation)
+    const buffer = await secureFs.readFile(validatedPath);
+    // TOCTOU: ensure file didn't grow beyond limit after read
+    if (buffer.length > maxFileSizeBytes) {
+      throw new Error(`File too large after read (possible change during operation): ${(buffer.length / (1024 * 1024)).toFixed(2)} MB`);
+    }
     const readTime = performance.now() - startTime;
     console.log(`[DEBUG] File read completed in ${readTime.toFixed(2)}ms, size: ${(buffer.length / 1024).toFixed(2)}KB`);
     return buffer;
@@ -296,8 +302,9 @@ ipcMain.handle('get-file-stats', async (event, filePath) => {
     console.log(`[DEBUG] IPC get-file-stats called for: ${displayName}`);
     const startTime = performance.now();
 
-    // Get file stats (secureFs validates path automatically)
-    const stats = await secureFs.stat(filePath);
+    // SECURITY: Ensure path is within allowed directories
+    const validatedPath = secureFs.validateFilePath(filePath);
+    const stats = await secureFs.stat(validatedPath);
     const statTime = performance.now() - startTime;
     console.log(`[DEBUG] File stats completed in ${statTime.toFixed(2)}ms, size: ${(stats.size / 1024).toFixed(2)}KB`);
     return {
@@ -326,15 +333,14 @@ ipcMain.handle('append-renderer-logs', async (event, rendererLogs) => {
   try {
     console.log(`[DEBUG] appendRendererLogs called with ${rendererLogs?.length || 0} logs`);
     if (Array.isArray(rendererLogs) && rendererLogs.length > 0) {
-      const logContent = '\n=== RENDERER PROCESS LOGS ===\n' + rendererLogs.join('\n') + '\n';
+      const logContent = `\n=== RENDERER PROCESS LOGS ===\n${rendererLogs.join('\n')}\n`;
       console.log(`[DEBUG] Writing ${logContent.length} characters to ${debugLogPath}`);
-      require('fs').appendFileSync(debugLogPath, logContent);
+      await fsNative.promises.appendFile(debugLogPath, logContent);
       console.log(`[DEBUG] Successfully appended ${rendererLogs.length} renderer logs to main debug file`);
 
       // Verify the file was written
-      const fs = require('fs');
-      if (fs.existsSync(debugLogPath)) {
-        const stats = fs.statSync(debugLogPath);
+      if (fsNative.existsSync(debugLogPath)) {
+        const stats = await fsNative.promises.stat(debugLogPath);
         console.log(`[DEBUG] File size after append: ${stats.size} bytes`);
       }
     } else {
@@ -385,10 +391,16 @@ ipcMain.handle('process-archive', async (event, archivePath, forceReprocess = fa
     console.log(`[DEBUG] IPC process-archive called for: ${archivePath}, forceReprocess: ${forceReprocess}`);
     const startTime = performance.now();
 
-    const result = await archiveService.processArchive(archivePath, (processed, total) => {
-      // Send progress updates to renderer
-      event.sender.send('archive-progress', { processed, total });
-    }, forceReprocess);
+    const result = await archiveService.processArchive(
+      archivePath,
+      (processed, total) => {
+        // Send progress updates to renderer
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('archive-progress', { processed, total });
+        }
+      },
+      forceReprocess
+    );
 
     const processTime = performance.now() - startTime;
     console.log(`[DEBUG] Archive processing completed in ${processTime.toFixed(2)}ms`);
@@ -416,6 +428,11 @@ ipcMain.handle('load-processed-archive', async (event, archiveHash) => {
   }
 
   try {
+    // SECURITY: Validate archive hash format to prevent path traversal
+    if (!archiveHash || typeof archiveHash !== 'string' || !/^[a-f0-9]{64}$/.test(archiveHash)) {
+      throw new Error('Invalid archive hash format');
+    }
+
     console.log(`[DEBUG] IPC load-processed-archive called for hash: ${archiveHash}`);
 
     const db = await archiveService.loadArchivesDb();
@@ -446,13 +463,21 @@ ipcMain.handle('load-processed-archive', async (event, archiveHash) => {
 });
 
 // Window control handlers
-ipcMain.handle('minimize-window', () => {
+ipcMain.handle('minimize-window', (event) => {
+  if (!validateSender(event)) {
+    throw new Error('Unauthorized IPC sender');
+  }
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.minimize();
   }
 });
 
-ipcMain.handle('maximize-window', () => {
+ipcMain.handle('maximize-window', (event) => {
+  if (!validateSender(event)) {
+    throw new Error('Unauthorized IPC sender');
+  }
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMaximized()) {
       mainWindow.unmaximize();
@@ -462,7 +487,11 @@ ipcMain.handle('maximize-window', () => {
   }
 });
 
-ipcMain.handle('close-window', () => {
+ipcMain.handle('close-window', (event) => {
+  if (!validateSender(event)) {
+    throw new Error('Unauthorized IPC sender');
+  }
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.close();
   }

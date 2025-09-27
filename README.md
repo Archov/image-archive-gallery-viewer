@@ -4,7 +4,7 @@ A comprehensive desktop image gallery management system with rich metadata, tagg
 
 ## Current Status: PR-01 Complete ✅
 
-**Fixed and Ready for Testing**
+### Fixed and Ready for Testing
 
 **Performance Optimizations Applied:**
 - **Direct file:// URLs**: Skip FileReader base64 encoding (should reduce 1-1.5s → ~50ms per image)

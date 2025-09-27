@@ -25,9 +25,20 @@ class ArchiveService {
    * @param {Object} app - Electron app instance
    */
   async initialize(app) {
+    // SECURITY: Validate that app provides reasonable paths
     const userDataDir = app.getPath('userData')
-    this.tempDir = path.join(app.getPath('temp'), 'gallery-extraction') // nosemgrep
-    this.archivesDbPath = path.join(userDataDir, 'archives.json') // nosemgrep
+    const tempDir = app.getPath('temp')
+
+    if (!userDataDir || !tempDir) {
+      throw new Error('Invalid application paths provided')
+    }
+
+    // Ensure paths are absolute and reasonable
+    const resolvedUserData = path.resolve(userDataDir)
+    const resolvedTemp = path.resolve(tempDir)
+
+    this.tempDir = path.join(resolvedTemp, 'gallery-extraction') // nosemgrep
+    this.archivesDbPath = path.join(resolvedUserData, 'archives.json') // nosemgrep
 
     // Ensure temp directory exists
     try {
@@ -93,8 +104,22 @@ class ArchiveService {
    * @returns {Promise<string>} SHA-256 hash
    */
   async calculateFileHash(filePath) {
-    const fileBuffer = await secureFs.readFile(filePath)
-    return crypto.createHash('sha256').update(fileBuffer).digest('hex')
+    return new Promise((resolve, reject) => {
+      const hash = crypto.createHash('sha256')
+      const stream = fsNative.createReadStream(filePath)
+
+      stream.on('data', (chunk) => {
+        hash.update(chunk)
+      })
+
+      stream.on('end', () => {
+        resolve(hash.digest('hex'))
+      })
+
+      stream.on('error', (error) => {
+        reject(new Error(`Failed to hash file: ${error.message}`))
+      })
+    })
   }
 
   /**
@@ -165,7 +190,6 @@ class ArchiveService {
         const zip = new AdmZip(archivePath)
         const entries = zip.getEntries()
 
-        const totalFiles = entries.length
         let processedFiles = 0
         const extractedFiles = []
 
@@ -174,9 +198,24 @@ class ArchiveService {
           (entry) => !entry.isDirectory && this.isImageFile(entry.entryName)
         )
 
+        // Track used filenames to prevent collisions
+        const usedNames = new Set()
+
         imageEntries.forEach((entry) => {
           try {
-            const fileName = path.basename(entry.entryName)
+            const baseName = path.basename(entry.entryName)
+            let fileName = baseName
+            let counter = 1
+
+            // Handle filename collisions by adding suffix
+            while (usedNames.has(fileName)) {
+              const ext = path.extname(baseName)
+              const nameWithoutExt = path.basename(baseName, ext)
+              fileName = `${nameWithoutExt}_${counter}${ext}`
+              counter++
+            }
+
+            usedNames.add(fileName)
             const outputPath = path.join(extractPath, fileName) // nosemgrep
 
             // Extract file
@@ -192,8 +231,8 @@ class ArchiveService {
             if (progressCallback) {
               progressCallback(processedFiles, imageEntries.length)
             }
-          } catch (error) {
-                        console.warn(`[ARCHIVE] Failed to extract entry:`, error.message)
+          } catch (_error) {
+                        console.warn(`[ARCHIVE] Failed to extract entry:`, _error.message)
           }
         })
 
@@ -217,25 +256,44 @@ class ArchiveService {
         const extractor = Unrar.createExtractorFromFile(archivePath, extractPath)
         const { files } = extractor.extract()
 
+        // Count total image files for progress calculation
+        const imageFiles = files.filter((file) =>
+          !file.fileHeader.flags.directory && this.isImageFile(file.fileHeader.name)
+        )
+        const totalImageFiles = imageFiles.length
+
         const extractedFiles = []
         let processedFiles = 0
 
-        files.forEach((file) => {
-          if (!file.fileHeader.flags.directory && this.isImageFile(file.fileHeader.name)) {
-            const fileName = path.basename(file.fileHeader.name)
-            const outputPath = path.join(extractPath, fileName) // nosemgrep
+        // Track used filenames to prevent collisions
+        const usedNames = new Set()
 
-            // File is already extracted by the extractor
-            extractedFiles.push({
-              originalName: file.fileHeader.name,
-              extractedPath: outputPath,
-              size: file.fileHeader.unpackedSize,
-            })
+        imageFiles.forEach((file) => {
+          const baseName = path.basename(file.fileHeader.name)
+          let fileName = baseName
+          let counter = 1
 
-            processedFiles++
-            if (progressCallback) {
-              progressCallback(processedFiles, files.length)
-            }
+          // Handle filename collisions by adding suffix
+          while (usedNames.has(fileName)) {
+            const ext = path.extname(baseName)
+            const nameWithoutExt = path.basename(baseName, ext)
+            fileName = `${nameWithoutExt}_${counter}${ext}`
+            counter++
+          }
+
+          usedNames.add(fileName)
+          const outputPath = path.join(extractPath, fileName) // nosemgrep
+
+          // File is already extracted by the extractor
+          extractedFiles.push({
+            originalName: file.fileHeader.name,
+            extractedPath: outputPath,
+            size: file.fileHeader.unpackedSize,
+          })
+
+          processedFiles++
+          if (progressCallback) {
+            progressCallback(processedFiles, totalImageFiles)
           }
         })
 
@@ -255,31 +313,56 @@ class ArchiveService {
    */
   async extract7z(archivePath, extractPath, progressCallback) {
     return new Promise((resolve, reject) => {
-      const stream = Seven.extract(archivePath, extractPath, {
-        $progress: true,
-      })
-
-      const extractedFiles = []
-      const totalFiles = 0
-
-      stream.on('progress', (progress) => {
-        if (progressCallback) {
-          progressCallback(progress.percent / 100, 1)
-        }
-      })
-
-      stream.on('end', () => {
-        // Scan extracted directory for image files
-        this.scanDirectoryForImages(extractPath)
-          .then((files) => {
-            resolve(files)
+      // SECURITY: Extract to temporary directory first to avoid extracting potentially dangerous files
+      const tempExtractPath = path.join(this.tempDir, `temp_7z_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`)
+      fs.mkdir(tempExtractPath, { recursive: true })
+        .then(() => {
+          const stream = Seven.extract(archivePath, tempExtractPath, {
+            $progress: true,
           })
-          .catch(reject)
-      })
 
-      stream.on('error', (error) => {
-        reject(new Error(`7Z extraction failed: ${error.message}`))
-      })
+          stream.on('progress', (progress) => {
+            if (progressCallback) {
+              progressCallback(progress.percent, 100)
+            }
+          })
+
+          stream.on('end', async () => {
+            try {
+              // Scan extracted directory for image files only
+              const allFiles = await this.scanDirectoryForImages(tempExtractPath)
+
+              // Move only image files to the final extraction directory
+              const extractedFiles = []
+              for (const file of allFiles) {
+                const finalPath = path.join(extractPath, path.relative(tempExtractPath, file.extractedPath))
+                await fs.mkdir(path.dirname(finalPath), { recursive: true })
+                await fs.rename(file.extractedPath, finalPath)
+
+                extractedFiles.push({
+                  ...file,
+                  extractedPath: finalPath
+                })
+              }
+
+              // Clean up temp directory
+              await fs.rm(tempExtractPath, { recursive: true, force: true })
+
+              resolve(extractedFiles)
+            } catch (error) {
+              // Clean up on error
+              fs.rm(tempExtractPath, { recursive: true, force: true }).catch(() => {})
+              reject(new Error(`7Z processing failed: ${error.message}`))
+            }
+          })
+
+          stream.on('error', async (error) => {
+            // Clean up temp directory on error
+            fs.rm(tempExtractPath, { recursive: true, force: true }).catch(() => {})
+            reject(new Error(`7Z extraction failed: ${error.message}`))
+          })
+        })
+        .catch(reject)
     })
   }
 
@@ -290,15 +373,29 @@ class ArchiveService {
    */
   async scanDirectoryForImages(dirPath) {
     const files = []
+    const rootDir = path.resolve(dirPath) // Canonical root directory
 
     async function scanDir(currentPath) {
+      // SECURITY: Validate that currentPath is within the root directory
+      const resolvedPath = path.resolve(currentPath)
+      if (!resolvedPath.startsWith(rootDir)) {
+        throw new Error(`Path traversal attempt detected: ${currentPath}`)
+      }
+
       const entries = await fs.readdir(currentPath, { withFileTypes: true })
 
       for (const entry of entries) {
         const fullPath = path.join(currentPath, entry.name) // nosemgrep
+        const resolvedFullPath = path.resolve(fullPath)
+
+        // SECURITY: Ensure resolved path is still within root directory
+        if (!resolvedFullPath.startsWith(rootDir)) {
+          console.warn(`[ARCHIVE] Skipping path outside root directory: ${fullPath}`)
+          continue
+        }
 
         if (entry.isDirectory()) {
-          await scanDir(fullPath)
+          await scanDir.call(this, fullPath)
         } else if (entry.isFile() && this.isImageFile(entry.name)) {
           const stats = await fs.stat(fullPath)
           files.push({
@@ -345,7 +442,7 @@ class ArchiveService {
       return {
         alreadyProcessed: true,
         metadata: existingArchive,
-        extractedFiles: existingArchive.extractedFiles || 0,
+        extractedFiles: existingArchive.extractedFiles || [],
       }
     }
 
@@ -356,9 +453,10 @@ class ArchiveService {
     )
 
     // Create extraction directory
+    const randomBytes = crypto.randomBytes(8).toString('hex')
     const extractDir = path.join(
       this.tempDir,
-      `extract_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      `extract_${Date.now()}_${randomBytes}`
     )
     await fs.mkdir(extractDir, { recursive: true })
 
@@ -386,7 +484,7 @@ class ArchiveService {
       const db = await this.loadArchivesDb()
       db.archives[metadata.hash] = {
         ...metadata,
-        extractedFiles: extractedFiles.length,
+        extractedFiles: extractedFiles,
         extractDir,
         extractedAt: Date.now(),
       }
@@ -421,11 +519,22 @@ class ArchiveService {
       for (const [hash, archive] of Object.entries(db.archives)) {
         if (archive.extractedAt && archive.extractedAt < cutoffTime) {
           try {
+            // SECURITY: Validate that extractDir is within our temp directory
+            const resolvedExtractDir = path.resolve(archive.extractDir)
+            const resolvedTempDir = path.resolve(this.tempDir)
+
+            if (!resolvedExtractDir.startsWith(resolvedTempDir)) {
+              console.warn(`[ARCHIVE] Skipping cleanup of directory outside temp area: ${archive.extractDir}`)
+              delete db.archives[hash]
+              cleanedCount++
+              continue
+            }
+
             await fs.access(archive.extractDir)
             await fs.rm(archive.extractDir, { recursive: true, force: true })
             delete db.archives[hash]
             cleanedCount++
-          } catch (error) {
+          } catch (_error) {
             // Directory might already be gone, just remove from DB
             delete db.archives[hash]
             cleanedCount++

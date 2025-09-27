@@ -31,6 +31,7 @@ class ImageGallery {
   }
 
   setupDebugCapture() {
+    const MAX_DEBUG_LOG_LINES = 5000
     const originalLog = console.log
     const originalError = console.error
     const originalWarn = console.warn
@@ -40,6 +41,7 @@ class ImageGallery {
         .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)))
         .join(' ')
       this.debugLogs.push(`[LOG ${new Date().toISOString()}] ${message}`)
+      if (this.debugLogs.length > MAX_DEBUG_LOG_LINES) this.debugLogs.shift()
       originalLog.apply(console, args)
     }
 
@@ -48,6 +50,7 @@ class ImageGallery {
         .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)))
         .join(' ')
       this.debugLogs.push(`[ERROR ${new Date().toISOString()}] ${message}`)
+      if (this.debugLogs.length > MAX_DEBUG_LOG_LINES) this.debugLogs.shift()
       originalError.apply(console, args)
     }
 
@@ -56,6 +59,7 @@ class ImageGallery {
         .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)))
         .join(' ')
       this.debugLogs.push(`[WARN ${new Date().toISOString()}] ${message}`)
+      if (this.debugLogs.length > MAX_DEBUG_LOG_LINES) this.debugLogs.shift()
       originalWarn.apply(console, args)
     }
   }
@@ -137,6 +141,9 @@ class ImageGallery {
     ) {
       console.error('Critical UI elements not found!')
     }
+
+    // Ensure fullscreen overlay is hidden by default
+    this.fullscreenOverlay.classList.add('hidden')
   }
 
   bindEvents() {
@@ -169,6 +176,10 @@ class ImageGallery {
 
   setupDragAndDrop() {
     const galleryContainer = document.getElementById('gallery-container')
+    if (!galleryContainer) {
+      console.warn('⚠️ Skipping drag-and-drop setup: #gallery-container not found')
+      return
+    }
 
     ;['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => {
       galleryContainer.addEventListener(eventName, (e) => {
@@ -201,7 +212,19 @@ class ImageGallery {
     try {
       const filePaths = await window.electronAPI.selectFiles()
       if (filePaths && filePaths.length > 0) {
-        await this.loadFilesFromPaths(filePaths)
+        const toLower = (p) => p.toLowerCase()
+        const isImg = (p) => ['.jpg','.jpeg','.png','.gif','.webp','.bmp','.tiff','.svg'].some(ext => toLower(p).endsWith(ext))
+        const isArc = (p) => ['.zip','.rar','.7z'].some(ext => toLower(p).endsWith(ext))
+        const imagePaths = filePaths.filter(isImg)
+        const archivePaths = filePaths.filter(isArc)
+
+        if (archivePaths.length) {
+          const archiveFiles = archivePaths.map((p) => ({ path: p, name: p.split(/[/\\]/).pop() }))
+          await this.processArchives(archiveFiles)
+        }
+        if (imagePaths.length) {
+          await this.loadFilesFromPaths(imagePaths)
+        }
       }
     } catch (error) {
       console.error('Error selecting files:', error)
@@ -519,7 +542,7 @@ class ImageGallery {
           const processTime = performance.now() - startTime
           console.log(`✅ Fallback processed ${file.name} in ${processTime.toFixed(2)}ms`)
           resolve({
-            id: Date.now() + Math.random(),
+            id: this.generateUniqueId(),
             name: file.name,
             path: file.path || file.name,
             dataUrl: e.target.result,
@@ -532,7 +555,7 @@ class ImageGallery {
         img.onerror = () => {
           console.log(`❌ Failed to load dragged image ${file.name}`)
           resolve({
-            id: Date.now() + Math.random(),
+            id: this.generateUniqueId(),
             name: file.name,
             path: file.path || file.name,
             error: true,
@@ -590,7 +613,7 @@ class ImageGallery {
     } catch (error) {
           console.error(`Error processing file:`, error)
       return {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: this.generateUniqueId(),
         name: filePath.split(/[/\\]/).pop(),
         path: filePath,
         error: true,
@@ -627,7 +650,7 @@ class ImageGallery {
         const totalTime = performance.now() - startTime
         console.log(`✅ Blob loaded ${filePath.split(/[/\\]/).pop()} in ${totalTime.toFixed(2)}ms`)
         resolve({
-          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: this.generateUniqueId(),
           name: filePath.split(/[/\\]/).pop(),
           path: filePath,
           dataUrl: dataUrl,
@@ -646,7 +669,9 @@ class ImageGallery {
 
   cleanupBlobUrls() {
     if (this.blobUrls) {
-      this.blobUrls.forEach((url) => URL.revokeObjectURL(url))
+      this.blobUrls.forEach((url) => {
+        URL.revokeObjectURL(url)
+      })
       this.blobUrls = []
     }
   }
@@ -682,13 +707,13 @@ class ImageGallery {
         const progressHandler = (progress) => {
           this.updateProgress(progress.processed, progress.total)
         }
-        window.electronAPI.onArchiveProgress(progressHandler)
+        const unsubscribeProgress = window.electronAPI.onArchiveProgress(progressHandler)
 
         // Process the archive
         const result = await window.electronAPI.processArchive(archiveFile.path)
 
         // Remove progress listener
-        window.electronAPI.removeArchiveProgressListener()
+        unsubscribeProgress()
 
         if (result.alreadyProcessed) {
           // Archive was already processed - ask user what to do
@@ -700,10 +725,10 @@ class ImageGallery {
           if (choice) {
             // User wants to reprocess
             this.loadingText.textContent = `Reprocessing ${archiveFile.name || 'archive'}...`
-            window.electronAPI.onArchiveProgress(progressHandler)
+            const unsubscribeProgressReprocess = window.electronAPI.onArchiveProgress(progressHandler)
 
             const reprocessResult = await window.electronAPI.processArchive(archiveFile.path, true)
-            window.electronAPI.removeArchiveProgressListener()
+            unsubscribeProgressReprocess()
 
             console.log(
               `✅ Archive reprocessed: ${reprocessResult.metadata.name} (${reprocessResult.extractedFiles.length} images extracted)`

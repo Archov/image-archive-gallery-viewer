@@ -26,9 +26,13 @@ contextBridge.exposeInMainWorld(
       if (!filePath || typeof filePath !== 'string') {
         return null // Indicate that file:// URL cannot be generated
       }
+      // Treat whitespace-only strings as invalid to avoid accidental "file:///" URLs
+      if (filePath.trim() === '') {
+        return null
+      }
       try {
         return pathToFileURL(filePath).href
-      } catch (error) {
+      } catch (_error) {
         // If pathToFileURL fails, return null to indicate fallback needed
         return null
       }
@@ -42,12 +46,11 @@ contextBridge.exposeInMainWorld(
     loadProcessedArchive: (archiveHash) =>
       ipcRenderer.invoke('load-processed-archive', archiveHash),
 
-    // Archive progress listener
+    // Archive progress listener with unsubscribe
     onArchiveProgress: (callback) => {
-      ipcRenderer.on('archive-progress', (event, progress) => callback(progress))
-    },
-    removeArchiveProgressListener: () => {
-      ipcRenderer.removeAllListeners('archive-progress')
+      const handler = (_event, progress) => callback(progress)
+      ipcRenderer.on('archive-progress', handler)
+      return () => ipcRenderer.removeListener('archive-progress', handler)
     },
 
     // Debug info
