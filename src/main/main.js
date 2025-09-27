@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
+const fsNative = require('fs');
 const os = require('os');
 const { performance } = require('node:perf_hooks');
 
