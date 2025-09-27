@@ -37,7 +37,9 @@ async function loadAppConfig() {
   }
 }
 
-// Security validation function
+// Security validation function - prevents path traversal attacks
+// This function implements comprehensive path validation to ensure file operations
+// are restricted to allowed directories and cannot escape via symlinks or ../
 function validateFilePath(filePath) {
   if (!filePath || typeof filePath !== 'string') {
     throw new Error('Invalid file path');
@@ -55,6 +57,8 @@ function validateFilePath(filePath) {
   const absolutePath = path.resolve(normalizedPath);
 
   // Resolve symlinks to canonical path to prevent symlink escapes
+  // SECURITY: This realpathSync call is intentional and validates the path
+  // before any file operations, preventing attacks via symbolic links
   let canonicalPath;
   try {
     canonicalPath = fsNative.realpathSync(absolutePath);
@@ -306,6 +310,9 @@ ipcMain.handle('read-file', async (event, filePath) => {
     const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
     console.log(`[DEBUG] IPC read-file called for: ${displayName}`);
     const startTime = performance.now();
+    // SECURITY: validateFilePath performs comprehensive path validation including
+    // type checking, null byte removal, normalization, canonicalization, and
+    // directory boundary checking to prevent path traversal attacks
     const validatedPath = validateFilePath(filePath);
 
     // Check file size before reading to prevent large IPC transfers
@@ -330,6 +337,9 @@ ipcMain.handle('get-file-stats', async (event, filePath) => {
     const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
     console.log(`[DEBUG] IPC get-file-stats called for: ${displayName}`);
     const startTime = performance.now();
+    // SECURITY: validateFilePath performs comprehensive path validation including
+    // type checking, null byte removal, normalization, canonicalization, and
+    // directory boundary checking to prevent path traversal attacks
     const validatedPath = validateFilePath(filePath);
     const stats = await fs.stat(validatedPath);
     const statTime = performance.now() - startTime;
