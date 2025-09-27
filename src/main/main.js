@@ -5,6 +5,7 @@ const fsNative = require('fs');
 const os = require('os');
 const { performance } = require('node:perf_hooks');
 const secureFs = require('./secure-fs');
+const archiveService = require('./archive-service');
 
 // App configuration
 let appConfig = {
@@ -169,6 +170,9 @@ app.whenReady().then(async () => {
   // Initialize secure file system with allowed paths
   secureFs.initializeAllowedPaths(app);
 
+  // Initialize archive service
+  await archiveService.initialize(app);
+
   // Load app configuration first
   await loadAppConfig();
 
@@ -211,8 +215,16 @@ ipcMain.handle('select-files', async () => {
     properties: ['openFile', 'multiSelections'],
     filters: [
       {
+        name: 'All Supported Files',
+        extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'svg', 'zip', 'rar', '7z']
+      },
+      {
         name: 'Images',
         extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'svg']
+      },
+      {
+        name: 'Archives',
+        extensions: ['zip', 'rar', '7z']
       }
     ]
   });
@@ -331,6 +343,105 @@ ipcMain.handle('append-renderer-logs', async (event, rendererLogs) => {
   } catch (error) {
     console.error('[ERROR] Failed to append renderer logs:', error.message);
     console.error('[ERROR] Stack:', error.stack);
+  }
+});
+
+// Archive processing IPC handlers
+ipcMain.handle('select-archives', async () => {
+  console.log('[DEBUG] IPC select-archives called');
+  const startTime = performance.now();
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      {
+        name: 'Archives',
+        extensions: ['zip', 'rar', '7z']
+      }
+    ]
+  });
+
+  const dialogTime = performance.now() - startTime;
+  console.log(`[DEBUG] Archive dialog completed in ${dialogTime.toFixed(2)}ms, returned ${result.filePaths?.length || 0} files`);
+
+  // Add parent directories to allowed list for security
+  if (result.filePaths && result.filePaths.length > 0) {
+    result.filePaths.forEach(filePath => {
+      const dir = path.dirname(filePath);
+      secureFs.addAllowedDirectory(dir);
+    });
+  }
+
+  return result.filePaths;
+});
+
+ipcMain.handle('process-archive', async (event, archivePath, forceReprocess = false) => {
+  // SECURITY: Validate IPC sender to prevent unauthorized access
+  if (!validateSender(event)) {
+    throw new Error('Unauthorized IPC sender');
+  }
+
+  try {
+    console.log(`[DEBUG] IPC process-archive called for: ${archivePath}, forceReprocess: ${forceReprocess}`);
+    const startTime = performance.now();
+
+    const result = await archiveService.processArchive(archivePath, (processed, total) => {
+      // Send progress updates to renderer
+      event.sender.send('archive-progress', { processed, total });
+    }, forceReprocess);
+
+    const processTime = performance.now() - startTime;
+    console.log(`[DEBUG] Archive processing completed in ${processTime.toFixed(2)}ms`);
+
+    return result;
+  } catch (error) {
+    console.error(`[ERROR] Failed to process archive:`, error.message);
+    throw new Error(`Failed to process archive: ${error.message}`);
+  }
+});
+
+ipcMain.handle('get-processed-archives', async () => {
+  try {
+    return await archiveService.getProcessedArchives();
+  } catch (error) {
+    console.error(`[ERROR] Failed to get processed archives:`, error.message);
+    return [];
+  }
+});
+
+ipcMain.handle('load-processed-archive', async (event, archiveHash) => {
+  // SECURITY: Validate IPC sender to prevent unauthorized access
+  if (!validateSender(event)) {
+    throw new Error('Unauthorized IPC sender');
+  }
+
+  try {
+    console.log(`[DEBUG] IPC load-processed-archive called for hash: ${archiveHash}`);
+
+    const db = await archiveService.loadArchivesDb();
+    const archive = db.archives[archiveHash];
+
+    if (!archive) {
+      throw new Error('Archive not found');
+    }
+
+    // Check if extraction directory still exists
+    try {
+      await fs.access(archive.extractDir);
+    } catch {
+      throw new Error('Archive extraction directory no longer exists');
+    }
+
+    // Get all image files from the extraction directory
+    const imageFiles = await archiveService.scanDirectoryForImages(archive.extractDir);
+
+    return {
+      metadata: archive,
+      extractedFiles: imageFiles
+    };
+  } catch (error) {
+    console.error(`[ERROR] Failed to load processed archive:`, error.message);
+    throw new Error(`Failed to load processed archive: ${error.message}`);
   }
 });
 
