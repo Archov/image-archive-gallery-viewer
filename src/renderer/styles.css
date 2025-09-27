@@ -100,6 +100,9 @@ body {
     align-items: start;
     overflow-anchor: auto;
     contain: layout style;
+    /* GPU acceleration for smooth scrolling */
+    transform: translateZ(0);
+    will-change: scroll-position;
 }
 
 /* Additional performance optimizations */
@@ -111,6 +114,22 @@ body {
     background: #1a1a1a;
     cursor: pointer;
     contain: layout style paint;
+    /* GPU acceleration for smooth rendering */
+    transform: translateZ(0);
+    will-change: transform;
+    /* Optimize image rendering */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: optimize-contrast;
+    /* Disable dragging */
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+    user-drag: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
 }
 
 /* No hover effects for better performance */
@@ -154,6 +173,12 @@ body {
     height: 100vh;
     object-fit: contain;
     background: #000;
+    /* GPU acceleration for smooth fullscreen navigation */
+    transform: translateZ(0);
+    will-change: transform;
+    /* Optimize image rendering */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: optimize-contrast;
 }
 
 #close-fullscreen {
@@ -255,10 +280,83 @@ body {
     100% { transform: rotate(360deg); }
 }
 
+/* Archive management styles */
+#archive-select-btn {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+#archive-select-btn:hover {
+    background: #218838;
+}
+
+#processed-archives-section {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#processed-archives-section h3 {
+    margin: 0 0 10px 0;
+    color: #007acc;
+    font-size: 16px;
+}
+
+.processed-archive-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    margin: 5px 0;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.archive-info {
+    flex: 1;
+}
+
+.archive-info strong {
+    display: block;
+    color: white;
+    font-size: 14px;
+}
+
+.archive-meta {
+    color: #ccc;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.load-archive-btn {
+    background: #007acc;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.2s;
+}
+
+.load-archive-btn:hover {
+    background: #005a9e;
+}
+
 /* Utility classes */
 .hidden {
     display: none !important;
 }
+
 
 /* Fixed 5-column layout for now */
 

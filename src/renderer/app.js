@@ -13,6 +13,9 @@ class ImageGallery {
         this.bindEvents();
         this.setupDragAndDrop();
 
+        // Load processed archives on startup
+        this.loadProcessedArchivesList();
+
         // Override console methods to capture logs
         this.setupDebugCapture();
 
@@ -106,9 +109,14 @@ class ImageGallery {
 
         // Buttons and controls
         this.fileSelectBtn = document.getElementById('file-select-btn');
+        this.archiveSelectBtn = document.getElementById('archive-select-btn');
         this.closeFullscreenBtn = document.getElementById('close-fullscreen');
         this.prevBtn = document.getElementById('prev-btn');
         this.nextBtn = document.getElementById('next-btn');
+
+        // Archive management
+        this.processedArchivesSection = document.getElementById('processed-archives-section');
+        this.processedArchivesList = document.getElementById('processed-archives-list');
 
         // Image elements
         this.fullscreenImage = document.getElementById('fullscreen-image');
@@ -133,6 +141,7 @@ class ImageGallery {
 
         // File selection
         this.fileSelectBtn.addEventListener('click', () => this.selectFiles());
+        this.archiveSelectBtn.addEventListener('click', () => this.selectArchives());
 
         // Fullscreen controls
         this.closeFullscreenBtn.addEventListener('click', () => this.closeFullscreen());
@@ -189,106 +198,50 @@ class ImageGallery {
         }
     }
 
+    async selectArchives() {
+        try {
+            const archivePaths = await window.electronAPI.selectArchives();
+            if (archivePaths && archivePaths.length > 0) {
+                // Create file objects from paths for archive processing
+                const archiveFiles = archivePaths.map(path => ({ path, name: path.split(/[/\\]/).pop() }));
+                await this.processArchives(archiveFiles);
+            }
+        } catch (error) {
+            console.error('Error selecting archives:', error);
+            alert('Error selecting archives: ' + error.message);
+        }
+    }
+
     async loadFiles(files) {
         console.log('🔍 DEBUG: loadFiles called with', files.length, 'files');
 
         // Clean up previous blob URLs to prevent memory leaks
         this.cleanupBlobUrls();
 
+        // Separate image files and archive files
         const imageFiles = files.filter(file => this.isImageFile(file));
-        console.log('🔍 DEBUG: Filtered to', imageFiles.length, 'image files');
+        const archiveFiles = files.filter(file => this.isArchiveFile(file));
 
-        if (imageFiles.length === 0) {
-            console.log('🔍 DEBUG: No image files found');
-            alert('No valid image files selected.');
+        console.log('🔍 DEBUG: Filtered to', imageFiles.length, 'image files and', archiveFiles.length, 'archive files');
+
+        if (imageFiles.length === 0 && archiveFiles.length === 0) {
+            console.log('🔍 DEBUG: No valid files found');
+            alert('No valid image files or archives selected.');
             return;
         }
 
-        console.log(`🚀 Starting to load ${imageFiles.length} files...`);
-        console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
-        const startTime = performance.now();
+        // Process archives first, then images
+        if (archiveFiles.length > 0) {
+            await this.processArchives(archiveFiles);
+        }
 
-        this.showLoading();
-        this.updateProgress(0, imageFiles.length);
-        this.images = [];
-
-        try {
-            // Adaptive batch size based on file count and estimated memory
-            const batchSize = imageFiles.length < 10 ? 2 :
-                              imageFiles.length < 50 ? 3 :
-                              imageFiles.length < 100 ? 4 : 5;
-            let processedCount = 0;
-
-            console.log(`🔍 DEBUG: Processing in batches of ${batchSize}...`);
-
-            for (let i = 0; i < imageFiles.length; i += batchSize) {
-                const batch = imageFiles.slice(i, i + batchSize);
-                console.log(`🔍 DEBUG: Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(imageFiles.length/batchSize)} (${batch.length} files)`);
-
-                const batchPromises = batch.map(file => this.processImageFile(file));
-                const batchResults = await Promise.allSettled(batchPromises);
-
-                // Process settled results: collect all results (including errors for display), log rejections
-                const allResults = [];
-                let batchSuccessfulCount = 0;
-
-                batchResults.forEach((settled, idx) => {
-                    if (settled.status === 'fulfilled') {
-                        const result = settled.value;
-                        if (result) {
-                            allResults.push(result);
-                            if (!result.error) {
-                                batchSuccessfulCount++;
-                            }
-                        }
-                        return;
-                    }
-
-                    const source = batch[idx];
-                    console.error('❌ Promise rejected:', settled.reason);
-                    allResults.push({
-                        id: this.generateUniqueId(),
-                        name: source?.name || source?.path || 'Unknown',
-                        path: source?.path,
-                        error: true,
-                        dataUrl: null
-                    });
-                });
-
-                this.images.push(...allResults);
-
-                processedCount += batch.length;
-                this.updateProgress(processedCount, imageFiles.length);
-
-                const successSoFar = this.images.filter(img => !img.error).length;
-                console.log(`🔍 DEBUG: Batch complete. Total processed: ${processedCount}/${imageFiles.length}, successful: ${successSoFar}, batch success: ${batchSuccessfulCount}/${batch.length}`);
-            }
-
-            const failedCount = this.images.filter(img => img.error).length;
-            const loadTime = performance.now() - startTime;
-
-            console.log(`✅ Loaded ${this.images.length - failedCount} images successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
-            console.log('🔍 DEBUG: Memory after loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
-            console.log(`📊 Average time per image: ${(loadTime / imageFiles.length).toFixed(2)}ms`);
-
-            console.log('🔍 DEBUG: Rendering gallery...');
-            this.renderGallery();
-            console.log('🔍 DEBUG: Hiding drop zone...');
-            this.hideDropZone();
-            console.log('✅ Gallery load complete!');
-        } catch (error) {
-            console.error('❌ Error loading files:', error);
-            alert('Error loading images: ' + error.message);
-        } finally {
-            this.hideLoading();
+        if (imageFiles.length > 0) {
+            await this.loadImageFiles(imageFiles);
         }
     }
 
     async loadFilesFromPaths(filePaths) {
         console.log('🔍 DEBUG: loadFilesFromPaths called with', filePaths.length, 'paths');
-
-        // Clean up previous blob URLs to prevent memory leaks
-        this.cleanupBlobUrls();
 
         console.log(`🚀 Starting to load ${filePaths.length} files from paths...`);
         console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
@@ -296,13 +249,14 @@ class ImageGallery {
 
         this.showLoading();
         this.updateProgress(0, filePaths.length);
-        this.images = [];
+        // Don't clear images array - append to existing images
+        // this.images = [];
 
         try {
-            // Adaptive batch size based on file count and estimated memory
-            const batchSize = filePaths.length < 10 ? 2 :
-                              filePaths.length < 50 ? 3 :
-                              filePaths.length < 100 ? 4 : 5;
+            // Aggressive batch size for maximum performance - modern systems can handle this
+            const batchSize = filePaths.length < 20 ? 8 :
+                              filePaths.length < 100 ? 16 :
+                              filePaths.length < 500 ? 32 : 64;
             let processedCount = 0;
 
             console.log(`🔍 DEBUG: Processing file paths in batches of ${batchSize}...`);
@@ -365,6 +319,90 @@ class ImageGallery {
             console.log('✅ Gallery load from paths complete!');
         } catch (error) {
             console.error('❌ Error loading files from paths:', error);
+            alert('Error loading images: ' + error.message);
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async loadImageFiles(imageFiles) {
+        console.log('🔍 DEBUG: loadImageFiles called with', imageFiles.length, 'files');
+
+        console.log(`🚀 Starting to load ${imageFiles.length} image files...`);
+        console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+        const startTime = performance.now();
+
+        this.showLoading();
+        this.updateProgress(0, imageFiles.length);
+        this.images = [];
+
+        try {
+            // Aggressive batch size for maximum performance - modern systems can handle this
+            const batchSize = imageFiles.length < 20 ? 8 :
+                              imageFiles.length < 100 ? 16 :
+                              imageFiles.length < 500 ? 32 : 64;
+            let processedCount = 0;
+
+            console.log(`🔍 DEBUG: Processing image files in batches of ${batchSize}...`);
+
+            for (let i = 0; i < imageFiles.length; i += batchSize) {
+                const batch = imageFiles.slice(i, i + batchSize);
+                console.log(`🔍 DEBUG: Processing image batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(imageFiles.length/batchSize)} (${batch.length} files)`);
+
+                const batchPromises = batch.map(file => this.processImageFile(file));
+                const batchResults = await Promise.allSettled(batchPromises);
+
+                // Process settled results: collect all results (including errors for display), log rejections
+                const allResults = [];
+                let batchSuccessfulCount = 0;
+
+                batchResults.forEach((settled, idx) => {
+                    if (settled.status === 'fulfilled') {
+                        const result = settled.value;
+                        if (result) {
+                            allResults.push(result);
+                            if (!result.error) {
+                                batchSuccessfulCount++;
+                            }
+                        }
+                        return;
+                    }
+
+                    const source = batch[idx];
+                    console.error('❌ Promise rejected:', settled.reason);
+                    allResults.push({
+                        id: this.generateUniqueId(),
+                        name: source?.name || source?.path || 'Unknown',
+                        path: source?.path,
+                        error: true,
+                        dataUrl: null
+                    });
+                });
+
+                this.images.push(...allResults);
+
+                processedCount += batch.length;
+                this.updateProgress(processedCount, imageFiles.length);
+
+                const successSoFar = this.images.filter(img => !img.error).length;
+                console.log(`🔍 DEBUG: Image batch complete. Total processed: ${processedCount}/${imageFiles.length}, successful: ${successSoFar}, batch success: ${batchSuccessfulCount}/${batch.length}`);
+            }
+
+            const successCount = this.images.filter(img => !img.error).length;
+            const failedCount = this.images.length - successCount;
+            const loadTime = performance.now() - startTime;
+
+            console.log(`✅ Loaded ${successCount} images successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
+            console.log('🔍 DEBUG: Memory after loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+            console.log(`📊 Average time per image: ${(loadTime / imageFiles.length).toFixed(2)}ms`);
+
+            console.log('🔍 DEBUG: Rendering gallery...');
+            this.renderGallery();
+            console.log('🔍 DEBUG: Hiding drop zone...');
+            this.hideDropZone();
+            console.log('✅ Gallery load complete!');
+        } catch (error) {
+            console.error('❌ Error loading image files:', error);
             alert('Error loading images: ' + error.message);
         } finally {
             this.hideLoading();
@@ -564,6 +602,154 @@ class ImageGallery {
         return imageExtensions.some(ext => fileName.endsWith(ext));
     }
 
+    isArchiveFile(file) {
+        const archiveExtensions = ['.zip', '.rar', '.7z'];
+        const fileName = (file?.name || file?.path || '').toLowerCase();
+        return archiveExtensions.some(ext => fileName.endsWith(ext));
+    }
+
+    async processArchives(archiveFiles) {
+        console.log(`📦 Processing ${archiveFiles.length} archives...`);
+
+        // Clear existing gallery when processing new archives
+        this.images = [];
+
+        for (const archiveFile of archiveFiles) {
+            try {
+                console.log(`📦 Processing archive: ${archiveFile.name || archiveFile.path}`);
+
+                // Show loading for archive processing
+                this.showLoading();
+                this.updateProgress(0, 1);
+                this.loadingText.textContent = `Processing ${archiveFile.name || 'archive'}...`;
+
+                // Set up progress listener
+                const progressHandler = (progress) => {
+                    this.updateProgress(progress.processed, progress.total);
+                };
+                window.electronAPI.onArchiveProgress(progressHandler);
+
+                // Process the archive
+                const result = await window.electronAPI.processArchive(archiveFile.path);
+
+                // Remove progress listener
+                window.electronAPI.removeArchiveProgressListener();
+
+                if (result.alreadyProcessed) {
+                    // Archive was already processed - ask user what to do
+                    const choice = confirm(
+                        `Archive "${result.metadata.name}" has already been processed and contains ${result.extractedFiles} images.\n\n` +
+                        `Choose "OK" to reprocess the archive anyway, or "Cancel" to skip.`
+                    );
+
+                    if (choice) {
+                        // User wants to reprocess
+                        this.loadingText.textContent = `Reprocessing ${archiveFile.name || 'archive'}...`;
+                        window.electronAPI.onArchiveProgress(progressHandler);
+
+                        const reprocessResult = await window.electronAPI.processArchive(archiveFile.path, true);
+                        window.electronAPI.removeArchiveProgressListener();
+
+                        console.log(`✅ Archive reprocessed: ${reprocessResult.metadata.name} (${reprocessResult.extractedFiles.length} images extracted)`);
+
+                        // Load the newly extracted images
+                        if (reprocessResult.extractedFiles.length > 0) {
+                            const extractedImagePaths = reprocessResult.extractedFiles.map(f => f.extractedPath);
+                            await this.loadFilesFromPaths(extractedImagePaths);
+                        }
+                    } else {
+                        // User chose to skip - show message about previously processed archive
+                        alert(`Archive "${result.metadata.name}" was previously processed (${result.extractedFiles} images). Skipping.`);
+                    }
+                } else {
+                    // Archive was processed successfully
+                    console.log(`✅ Archive processed: ${result.metadata.name} (${result.extractedFiles.length} images extracted)`);
+
+                    // Load the extracted images
+                    if (result.extractedFiles.length > 0) {
+                        const extractedImagePaths = result.extractedFiles.map(f => f.extractedPath);
+                        await this.loadFilesFromPaths(extractedImagePaths);
+                    }
+                }
+
+            } catch (error) {
+                console.error(`❌ Failed to process archive ${archiveFile.name}:`, error);
+                alert(`Failed to process archive ${archiveFile.name}: ${error.message}`);
+            } finally {
+                this.hideLoading();
+            }
+        }
+    }
+
+    async loadProcessedArchive(archiveHash) {
+        try {
+            console.log(`📦 Loading previously processed archive: ${archiveHash}`);
+
+            // Show loading
+            this.showLoading();
+            this.updateProgress(0, 1);
+            this.loadingText.textContent = 'Loading processed archive...';
+
+            const result = await window.electronAPI.loadProcessedArchive(archiveHash);
+
+            console.log(`✅ Loaded processed archive: ${result.metadata.name} (${result.extractedFiles.length} images)`);
+
+            // Load the extracted images into the gallery
+            if (result.extractedFiles.length > 0) {
+                const extractedImagePaths = result.extractedFiles.map(f => f.extractedPath);
+                await this.loadFilesFromPaths(extractedImagePaths);
+            }
+
+        } catch (error) {
+            console.error(`❌ Failed to load processed archive:`, error);
+            alert(`Failed to load processed archive: ${error.message}`);
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async loadProcessedArchivesList() {
+        try {
+            const processedArchives = await window.electronAPI.getProcessedArchives();
+            if (processedArchives && processedArchives.length > 0) {
+                this.displayProcessedArchives(processedArchives);
+            }
+        } catch (error) {
+            console.warn('Failed to load processed archives list:', error);
+        }
+    }
+
+    displayProcessedArchives(archives) {
+        if (!this.processedArchivesList) return;
+
+        this.processedArchivesList.innerHTML = '';
+
+        archives.forEach(archive => {
+            const archiveItem = document.createElement('div');
+            archiveItem.className = 'processed-archive-item';
+            archiveItem.innerHTML = `
+                <div class="archive-info">
+                    <strong>${archive.name}</strong>
+                    <span class="archive-meta">${archive.extractedFiles || 0} images • ${(archive.size / 1024 / 1024).toFixed(1)}MB</span>
+                </div>
+                <button class="load-archive-btn" data-hash="${archive.hash}">Load Images</button>
+            `;
+
+            // Add click handler for the load button
+            const loadBtn = archiveItem.querySelector('.load-archive-btn');
+            loadBtn.addEventListener('click', () => {
+                this.loadProcessedArchive(archive.hash);
+            });
+
+            this.processedArchivesList.appendChild(archiveItem);
+        });
+
+        // Show the processed archives section
+        if (this.processedArchivesSection) {
+            this.processedArchivesSection.style.display = 'block';
+        }
+    }
+
     renderGallery() {
         console.log(`🔍 DEBUG: Starting gallery render for ${this.images.length} images...`);
         const renderStart = performance.now();
@@ -602,8 +788,9 @@ class ImageGallery {
                 img.className = 'gallery-image';
                 img.src = image.dataUrl;
                 img.alt = image.name;
-                img.loading = 'lazy'; // Defer loading off-screen images
+                img.loading = 'eager'; // Load immediately for gallery performance
                 img.decoding = 'async'; // Don't block on image decoding
+                img.draggable = false; // Disable dragging to prevent accidental gallery reload
                 img.addEventListener('click', () => this.openFullscreen(index));
                 fragment.appendChild(img);
             }
@@ -637,15 +824,11 @@ class ImageGallery {
             if (e.target === this.fullscreenOverlay) this.closeFullscreen();
         };
 
-        let wheelTimeout;
         this.fullscreenWheelHandler = (e) => {
             e.preventDefault();
-            // Debounce wheel events to prevent too rapid navigation
-            clearTimeout(wheelTimeout);
-            wheelTimeout = setTimeout(() => {
-                if (e.deltaX > 0 || e.deltaY > 0) this.showNext();
-                else if (e.deltaX < 0 || e.deltaY < 0) this.showPrevious();
-            }, 50);
+            // Handle wheel navigation without debounce for responsive scrolling
+            if (e.deltaX > 0 || e.deltaY > 0) this.showNext();
+            else if (e.deltaX < 0 || e.deltaY < 0) this.showPrevious();
         };
         this.fullscreenOverlay.addEventListener('wheel', this.fullscreenWheelHandler, { passive: false });
     }

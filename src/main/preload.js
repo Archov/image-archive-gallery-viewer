@@ -32,6 +32,20 @@ contextBridge.exposeInMainWorld('electronAPI', Object.freeze({
     }
   },
 
+  // Archive processing
+  selectArchives: () => ipcRenderer.invoke('select-archives'),
+  processArchive: (archivePath, forceReprocess = false) => ipcRenderer.invoke('process-archive', archivePath, forceReprocess),
+  getProcessedArchives: () => ipcRenderer.invoke('get-processed-archives'),
+  loadProcessedArchive: (archiveHash) => ipcRenderer.invoke('load-processed-archive', archiveHash),
+
+  // Archive progress listener
+  onArchiveProgress: (callback) => {
+    ipcRenderer.on('archive-progress', (event, progress) => callback(progress));
+  },
+  removeArchiveProgressListener: () => {
+    ipcRenderer.removeAllListeners('archive-progress');
+  },
+
   // Debug info
   getDebugLogPath: () => ipcRenderer.invoke('get-debug-log-path'),
   appendRendererLogs: (logs) => ipcRenderer.invoke('append-renderer-logs', logs)
