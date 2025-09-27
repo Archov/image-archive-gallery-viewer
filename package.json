@@ -11,7 +11,13 @@
     "build-mac": "electron-builder --mac",
     "build-linux": "electron-builder --linux",
     "build-all": "electron-builder --win --mac --linux",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "lint": "biome check .",
+    "lint-fix": "biome check --write .",
+    "format": "biome format .",
+    "format-write": "biome format --write .",
+    "security-scan": "opengrep.exe --config auto",
+    "analyze": "npm run lint && npm run security-scan"
   },
   "keywords": [
     "image-gallery",
@@ -23,6 +29,7 @@
   "author": "You",
   "license": "MIT",
   "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
     "@electron/rebuild": "^4.0.1",
     "cross-env": "^7.0.3",
     "electron": "^28.1.0",

@@ -1,17 +1,14 @@
-const fs = require('fs').promises;
-const fsNative = require('fs');
-const path = require('path');
+const fs = require('fs').promises
+const fsNative = require('fs')
+const path = require('path')
 
 // Helper function to check if a path is inside another path
 // (replacement for is-path-inside library which is ESM-only)
 function isPathInside(childPath, parentPath) {
-  const relation = path.relative(parentPath, childPath);
+  const relation = path.relative(parentPath, childPath)
   return Boolean(
-    relation &&
-    relation !== '..' &&
-    !relation.startsWith('..') &&
-    !path.isAbsolute(relation)
-  );
+    relation && relation !== '..' && !relation.startsWith('..') && !path.isAbsolute(relation)
+  )
 }
 
 // SECURE FILE OPERATIONS WRAPPER
@@ -34,33 +31,33 @@ function isPathInside(childPath, parentPath) {
 // which implements multi-layer security validation.
 
 // Allowed directories for file operations
-const allowedDirectories = new Set();
+const allowedDirectories = new Set()
 
 // Initialize with app directories
 function initializeAllowedPaths(app) {
-  const userDataDir = app.getPath('userData');
-  const imagesDir = path.join(userDataDir, 'images');
-  const tempDir = app.getPath('temp');
+  const userDataDir = app.getPath('userData')
+  const imagesDir = path.join(userDataDir, 'images')
+  const tempDir = app.getPath('temp')
 
   // Canonicalize and add to allowed paths
-  [userDataDir, tempDir, imagesDir].forEach(dir => {
+  ;[userDataDir, tempDir, imagesDir].forEach((dir) => {
     try {
-      const canonical = fsNative.realpathSync(dir);
-      allowedDirectories.add(canonical);
+      const canonical = fsNative.realpathSync(dir)
+      allowedDirectories.add(canonical)
     } catch (error) {
-      console.warn(`[WARN] Could not canonicalize allowed directory ${dir}:`, error.message);
+      console.warn(`[WARN] Could not canonicalize allowed directory ${dir}:`, error.message)
     }
-  });
+  })
 }
 
 // Add user-selected directories to allowed list
 function addAllowedDirectory(dirPath) {
   try {
-    const canonical = fsNative.realpathSync(dirPath);
-    allowedDirectories.add(canonical);
-    console.log(`[SECURITY] Added allowed directory: ${canonical}`);
+    const canonical = fsNative.realpathSync(dirPath)
+    allowedDirectories.add(canonical)
+    console.log(`[SECURITY] Added allowed directory: ${canonical}`)
   } catch (error) {
-    console.warn(`[WARN] Could not add allowed directory ${dirPath}:`, error.message);
+    console.warn(`[WARN] Could not add allowed directory ${dirPath}:`, error.message)
   }
 }
 
@@ -72,51 +69,50 @@ function addAllowedDirectory(dirPath) {
 // - Null byte injection attacks
 function validateFilePath(filePath) {
   if (!filePath || typeof filePath !== 'string') {
-    throw new Error('Invalid file path: must be a non-empty string');
+    throw new Error('Invalid file path: must be a non-empty string')
   }
 
   // Strip null bytes (security)
-  const sanitized = filePath.replace(/\0/g, '');
+  const sanitized = filePath.replace(/\0/g, '')
 
   // SECURITY: Normalize path to handle relative components safely
   // path.normalize() is safe here because null bytes were already stripped
-  const normalized = process.platform === 'win32'
-    ? path.win32.normalize(sanitized)
-    : path.normalize(sanitized);
+  const normalized =
+    process.platform === 'win32' ? path.win32.normalize(sanitized) : path.normalize(sanitized)
 
   // SECURITY: Resolve to absolute path for canonical validation
   // path.resolve() is safe here because input has been sanitized and normalized
-  const absolute = path.resolve(normalized);
+  const absolute = path.resolve(normalized)
 
   // Canonicalize to resolve symlinks (security)
-  let canonical;
+  let canonical
   try {
-    canonical = fsNative.realpathSync(absolute);
+    canonical = fsNative.realpathSync(absolute)
   } catch (error) {
     // Handle ENOENT (file doesn't exist) for write operations
     if (error.code === 'ENOENT') {
-      const parentDir = path.dirname(absolute);
+      const parentDir = path.dirname(absolute)
       try {
-        const canonicalParent = fsNative.realpathSync(parentDir);
-        canonical = path.join(canonicalParent, path.basename(absolute));
+        const canonicalParent = fsNative.realpathSync(parentDir)
+        canonical = path.join(canonicalParent, path.basename(absolute))
       } catch (parentError) {
-        throw new Error(`Parent directory resolution failed: ${parentError.message}`);
+        throw new Error(`Parent directory resolution failed: ${parentError.message}`)
       }
     } else {
-      throw new Error(`Path resolution failed: ${error.message}`);
+      throw new Error(`Path resolution failed: ${error.message}`)
     }
   }
 
   // Check if path is within allowed directories
-  const isAllowed = Array.from(allowedDirectories).some(allowedDir => {
-    return isPathInside(canonical, allowedDir) || canonical === allowedDir;
-  });
+  const isAllowed = Array.from(allowedDirectories).some((allowedDir) => {
+    return isPathInside(canonical, allowedDir) || canonical === allowedDir
+  })
 
   if (!isAllowed) {
-    throw new Error(`Access denied: path outside allowed directories`);
+    throw new Error(`Access denied: path outside allowed directories`)
   }
 
-  return canonical;
+  return canonical
 }
 
 // SECURE FILE OPERATIONS - ALL PATHS VALIDATED BEFORE FS ACCESS
@@ -125,22 +121,21 @@ const secureFs = {
   // since the user explicitly chose these files. Only basic path sanitization.
   async readFile(filePath, options) {
     if (!filePath || typeof filePath !== 'string') {
-      throw new Error('Invalid file path: must be a non-empty string');
+      throw new Error('Invalid file path: must be a non-empty string')
     }
 
     // Basic sanitization: strip null bytes and canonicalize
-    const sanitized = filePath.replace(/\0/g, '');
-    const normalized = process.platform === 'win32'
-      ? path.win32.normalize(sanitized)
-      : path.normalize(sanitized);
-    const absolute = path.resolve(normalized);
+    const sanitized = filePath.replace(/\0/g, '')
+    const normalized =
+      process.platform === 'win32' ? path.win32.normalize(sanitized) : path.normalize(sanitized)
+    const absolute = path.resolve(normalized)
 
     // Canonicalize to resolve symlinks (prevents basic attacks)
     try {
-      const canonical = fsNative.realpathSync(absolute);
-      return fs.readFile(canonical, options);
+      const canonical = fsNative.realpathSync(absolute)
+      return fs.readFile(canonical, options)
     } catch (error) {
-      throw new Error(`File access failed: ${error.message}`);
+      throw new Error(`File access failed: ${error.message}`)
     }
   },
 
@@ -148,41 +143,40 @@ const secureFs = {
   // since the user explicitly chose these files. Only basic path sanitization.
   async stat(filePath) {
     if (!filePath || typeof filePath !== 'string') {
-      throw new Error('Invalid file path: must be a non-empty string');
+      throw new Error('Invalid file path: must be a non-empty string')
     }
 
     // Basic sanitization: strip null bytes and canonicalize
-    const sanitized = filePath.replace(/\0/g, '');
-    const normalized = process.platform === 'win32'
-      ? path.win32.normalize(sanitized)
-      : path.normalize(sanitized);
-    const absolute = path.resolve(normalized);
+    const sanitized = filePath.replace(/\0/g, '')
+    const normalized =
+      process.platform === 'win32' ? path.win32.normalize(sanitized) : path.normalize(sanitized)
+    const absolute = path.resolve(normalized)
 
     // Canonicalize to resolve symlinks (prevents basic attacks)
     try {
-      const canonical = fsNative.realpathSync(absolute);
-      return fs.stat(canonical);
+      const canonical = fsNative.realpathSync(absolute)
+      return fs.stat(canonical)
     } catch (error) {
-      throw new Error(`File access failed: ${error.message}`);
+      throw new Error(`File access failed: ${error.message}`)
     }
   },
 
   // SECURITY: Path validated by validateFilePath() before fs.writeFile()
   async writeFile(filePath, data, options) {
-    const validatedPath = validateFilePath(filePath); // SECURITY VALIDATION
-    return fs.writeFile(validatedPath, data, options);
+    const validatedPath = validateFilePath(filePath) // SECURITY VALIDATION
+    return fs.writeFile(validatedPath, data, options)
   },
 
   // SECURITY: Path validated by validateFilePath() before fs.appendFile()
   async appendFile(filePath, data, options) {
-    const validatedPath = validateFilePath(filePath); // SECURITY VALIDATION
-    return fs.appendFile(validatedPath, data, options);
+    const validatedPath = validateFilePath(filePath) // SECURITY VALIDATION
+    return fs.appendFile(validatedPath, data, options)
   },
 
   // SECURITY: Path validated by validateFilePath() before fs.access()
   async access(filePath, mode) {
-    const validatedPath = validateFilePath(filePath); // SECURITY VALIDATION
-    return fs.access(validatedPath, mode);
+    const validatedPath = validateFilePath(filePath) // SECURITY VALIDATION
+    return fs.access(validatedPath, mode)
   },
 
   // Utility functions
@@ -191,7 +185,7 @@ const secureFs = {
   validateFilePath,
 
   // Direct access to allowed directories for reference
-  getAllowedDirectories: () => Array.from(allowedDirectories)
-};
+  getAllowedDirectories: () => Array.from(allowedDirectories),
+}
 
-module.exports = secureFs;
+module.exports = secureFs
