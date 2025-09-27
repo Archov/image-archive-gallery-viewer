@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+
+# CodeRabbit Configuration for Image Gallery Manager
+# A relaxed configuration suitable for an Electron image gallery application
+# Not a high-stakes financial system, but still follows good practices
+
+language: "en-US"
+
+# Relaxed tone - we're building an image gallery, not rocket surgery
+tone_instructions: "Be helpful and constructive, but don't be overly pedantic. This is an image gallery application for individual use, not a mission-critical financial system."
+
+reviews:
+  # Use chill profile - less nitpicky for personal projects
+  profile: "chill"
+
+  # Enable auto-reviews but keep them as drafts for manual review
+  auto_review:
+    enabled: true
+    drafts: false
+
+  # Basic summaries and walkthroughs
+  high_level_summary: true
+  collapse_walkthrough: false
+  changed_files_summary: true
+
+  # Reasonable quality gates for personal projects
+  pre_merge_checks:
+    title:
+      mode: "warning"
+      requirements: "Include a brief description of changes"
+    description:
+      mode: "off"  # Not required for personal projects
+
+  # Tools appropriate for Electron/Node.js projects
+  tools:
+    # Linting
+    biome:
+      enabled: true
+      config: ".biome.json"
+
+    eslint:
+      enabled: false  # Using Biome instead
+
+    # Security scanning
+    semgrep:
+      enabled: true
+      config: "auto"
+
+    gitleaks:
+      enabled: true
+
+    # Dependency checking
+    npm-audit:
+      enabled: true
+
+    # Performance
+    lighthouse:
+      enabled: false  # Not a web app
+
+  # Path filtering for Electron app
+  path_filters:
+    # Include source code
+    - "src/**/*"
+    - "package.json"
+    - "package-lock.json"
+    - "*.md"
+
+    # Exclude build artifacts and temp files
+    - "!dist/**/*"
+    - "!build/**/*"
+    - "!*.exe"
+    - "!*.msi"
+    - "!*.dmg"
+    - "!node_modules/**/*"
+    - "!Work-Items/**/*"  # Our roadmap files
+    - "!WI-*.summary.json"  # Our comment summaries
+    - "!test_archive.zip"  # Test data
+    - "!*.log"  # Debug logs
+
+  # Knowledge base for consistent reviews
+  knowledge_base:
+    # Use local repository knowledge
+    learnings:
+      scope: "local"
+
+    # Include issues and PRs for context
+    issues:
+      scope: "local"
+    pull_requests:
+      scope: "local"
+
+  # Review instructions specific to our image gallery app
+  review_instructions: |
+    ## Context
+    This is an Electron-based image gallery application for managing and viewing image collections. It's designed for personal use and image organization.
+
+    ## Key Considerations
+    - **Security**: Path validation is only important if there is a real high risk that the app interacting with a file or url would be MORE dangerous than using any other desktop based tool.
+    - **Performance**: Image processing and gallery rendering should be efficient, the quintisential value of the app is the ability to view images effortlessly in a distraction free environment.
+    - **UX**: User experience is important for image browsing workflows
+    - **Error Handling**: Clear error messages for file operations and archive processing
+
+    ## Areas of Focus
+    - Archive extraction
+    - Image gallery performance and memory management
+    - File system operations and user permissions
+    - UI responsiveness for large image collections
+
+    ## Non-Critical Issues
+    - Minor performance optimizations for non-critical paths
+    - Code style preferences that don't affect functionality
+    - Documentation completeness for internal functions
+
+# Code generation settings (keep minimal for personal project)
+code_generation:
+  docstrings:
+    language: "en-US"
+  unit_tests:
+    enabled: false  # Not focusing on test generation for this project
