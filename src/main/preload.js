@@ -20,10 +20,16 @@ contextBridge.exposeInMainWorld('electronAPI', Object.freeze({
 
   // File URL encoding
   toFileUrl: (filePath) => {
-    if (typeof filePath !== 'string') {
-      throw new TypeError('Expected filePath to be a string');
+    // Handle null/undefined paths gracefully for drag-and-drop files
+    if (!filePath || typeof filePath !== 'string') {
+      return null; // Indicate that file:// URL cannot be generated
     }
-    return pathToFileURL(filePath).href;
+    try {
+      return pathToFileURL(filePath).href;
+    } catch (error) {
+      // If pathToFileURL fails, return null to indicate fallback needed
+      return null;
+    }
   },
 
   // Debug info

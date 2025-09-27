@@ -293,7 +293,6 @@ class ImageGallery {
         console.log(`🚀 Starting to load ${filePaths.length} files from paths...`);
         console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
         const startTime = performance.now();
-        const prevImagesLength = this.images.length;
 
         this.showLoading();
         this.updateProgress(0, filePaths.length);
@@ -351,11 +350,11 @@ class ImageGallery {
                 console.log(`🔍 DEBUG: Path batch complete. Total processed: ${processedCount}/${filePaths.length}, successful: ${successSoFar}, batch success: ${batchSuccessfulCount}/${batch.length}`);
             }
 
-            const newlyAdded = this.images.length - prevImagesLength;
-            const failedCount = this.images.filter(img => img.error).length;
+            const successCount = this.images.filter(img => !img.error).length;
+            const failedCount = this.images.length - successCount;
             const loadTime = performance.now() - startTime;
 
-            console.log(`✅ Loaded ${newlyAdded - failedCount} images from paths successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
+            console.log(`✅ Loaded ${successCount} images from paths successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
             console.log('🔍 DEBUG: Memory after loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
             console.log(`📊 Average time per image: ${(loadTime / filePaths.length).toFixed(2)}ms`);
 
@@ -379,34 +378,40 @@ class ImageGallery {
         // For Electron, we can use the file path directly instead of FileReader
         // This avoids the slow base64 encoding of large files
         if (file.path) {
-            // Direct file path available (usually on desktop)
-            return new Promise((resolve, reject) => {
-                const img = new Image();
+            // Try to get file:// URL from path
+            const fileUrl = window.electronAPI.toFileUrl(file.path);
 
-                const fileUrl = window.electronAPI.toFileUrl(file.path);
+            if (fileUrl) {
+                // Direct file path available (usually on desktop)
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
 
-                img.onload = () => {
-                    const processTime = performance.now() - startTime;
-                    console.log(`✅ Processed ${file.name} in ${processTime.toFixed(2)}ms`);
-                    resolve({
-                        id: this.generateUniqueId(),
-                        name: file.name,
-                        path: file.path,
-                        dataUrl: fileUrl,
-                        width: img.naturalWidth,
-                        height: img.naturalHeight,
-                        aspectRatio: img.naturalWidth / img.naturalHeight,
-                        file: file
-                    });
-                };
-                img.onerror = () => {
-                    console.log(`❌ Failed to load dragged image ${file.name}, falling back to FileReader`);
-                    // Fallback to FileReader if file:// URL fails
-                    this.fallbackProcessImageFile(file, startTime).then(resolve).catch(reject);
-                };
-                // Don't set crossOrigin for file:// URLs
-                img.src = fileUrl;
-            });
+                    img.onload = () => {
+                        const processTime = performance.now() - startTime;
+                        console.log(`✅ Processed ${file.name} in ${processTime.toFixed(2)}ms`);
+                        resolve({
+                            id: this.generateUniqueId(),
+                            name: file.name,
+                            path: file.path,
+                            dataUrl: fileUrl,
+                            width: img.naturalWidth,
+                            height: img.naturalHeight,
+                            aspectRatio: img.naturalWidth / img.naturalHeight,
+                            file: file
+                        });
+                    };
+                    img.onerror = () => {
+                        console.log(`❌ Failed to load dragged image ${file.name}, falling back to FileReader`);
+                        // Fallback to FileReader if file:// URL fails
+                        this.fallbackProcessImageFile(file, startTime).then(resolve).catch(reject);
+                    };
+                    // Don't set crossOrigin for file:// URLs
+                    img.src = fileUrl;
+                });
+            } else {
+                // File path exists but URL generation failed, use FileReader directly
+                return this.fallbackProcessImageFile(file, startTime);
+            }
         } else {
             // Fallback for cases where file.path is not available
             return this.fallbackProcessImageFile(file, startTime);
