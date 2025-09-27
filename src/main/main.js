@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
-const fsNative = require('fs');
 const os = require('os');
 const { performance } = require('node:perf_hooks');
 
@@ -83,21 +82,27 @@ const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
 console.log = (...args) => {
-    const message = `[MAIN ${new Date().toISOString()}] ${args.join(' ')}`;
+    const message = `[MAIN ${new Date().toISOString()}] ` + args.map(a => {
+        try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch { return String(a); }
+    }).join(' ');
     debugLogs.push(message);
     if (debugLogs.length > MAX_DEBUG_LOG_LINES) debugLogs.shift();
     originalConsoleLog.apply(console, args);
 };
 
 console.error = (...args) => {
-    const message = `[MAIN ERROR ${new Date().toISOString()}] ${args.join(' ')}`;
+    const message = `[MAIN ERROR ${new Date().toISOString()}] ` + args.map(a => {
+        try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch { return String(a); }
+    }).join(' ');
     debugLogs.push(message);
     if (debugLogs.length > MAX_DEBUG_LOG_LINES) debugLogs.shift();
     originalConsoleError.apply(console, args);
 };
 
 console.warn = (...args) => {
-    const message = `[MAIN WARN ${new Date().toISOString()}] ${args.join(' ')}`;
+    const message = `[MAIN WARN ${new Date().toISOString()}] ` + args.map(a => {
+        try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch { return String(a); }
+    }).join(' ');
     debugLogs.push(message);
     if (debugLogs.length > MAX_DEBUG_LOG_LINES) debugLogs.shift();
     originalConsoleWarn.apply(console, args);
@@ -246,26 +251,26 @@ ipcMain.handle('select-directory', async () => {
 });
 
 ipcMain.handle('read-file', async (event, filePath) => {
-  console.log(`🔍 DEBUG: IPC read-file called for: ${filePath.split(/[/\\]/).pop()}`);
-  const startTime = performance.now();
-
   try {
+    const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
+    console.log(`🔍 DEBUG: IPC read-file called for: ${displayName}`);
+    const startTime = performance.now();
     const validatedPath = validateFilePath(filePath);
     const buffer = await fs.readFile(validatedPath);
     const readTime = performance.now() - startTime;
     console.log(`🔍 DEBUG: File read completed in ${readTime.toFixed(2)}ms, size: ${(buffer.length / 1024).toFixed(2)}KB`);
     return buffer;
   } catch (error) {
-    console.error(`❌ Failed to read file ${filePath}:`, error.message);
+    console.error(`❌ Failed to read file:`, error.message);
     throw new Error(`Failed to read file: ${error.message}`);
   }
 });
 
 ipcMain.handle('get-file-stats', async (event, filePath) => {
-  console.log(`🔍 DEBUG: IPC get-file-stats called for: ${filePath.split(/[/\\]/).pop()}`);
-  const startTime = performance.now();
-
   try {
+    const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
+    console.log(`🔍 DEBUG: IPC get-file-stats called for: ${displayName}`);
+    const startTime = performance.now();
     const validatedPath = validateFilePath(filePath);
     const stats = await fs.stat(validatedPath);
     const statTime = performance.now() - startTime;
@@ -277,7 +282,7 @@ ipcMain.handle('get-file-stats', async (event, filePath) => {
       isFile: stats.isFile()
     };
   } catch (error) {
-    console.error(`❌ Failed to get file stats ${filePath}:`, error.message);
+    console.error(`❌ Failed to get file stats:`, error.message);
     throw new Error(`Failed to get file stats: ${error.message}`);
   }
 });

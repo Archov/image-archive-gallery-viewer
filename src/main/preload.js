@@ -3,7 +3,7 @@ const { pathToFileURL } = require('url');
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
-contextBridge.exposeInMainWorld('electronAPI', {
+contextBridge.exposeInMainWorld('electronAPI', Object.freeze({
   // File operations
   selectFiles: () => ipcRenderer.invoke('select-files'),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
@@ -23,4 +23,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Debug info
   getDebugLogPath: () => ipcRenderer.invoke('get-debug-log-path')
-});
+}));

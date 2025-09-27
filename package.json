@@ -10,7 +10,8 @@
     "build-win": "electron-builder --win",
     "build-mac": "electron-builder --mac",
     "build-linux": "electron-builder --linux",
-    "build-all": "electron-builder --win --mac --linux"
+    "build-all": "electron-builder --win --mac --linux",
+    "postinstall": "electron-builder install-app-deps"
   },
   "keywords": [
     "image-gallery",

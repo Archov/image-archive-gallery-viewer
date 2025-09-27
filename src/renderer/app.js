@@ -136,12 +136,17 @@ class ImageGallery {
         this.progressText = document.getElementById('progress-text');
 
         // Verify critical elements exist
-        if (!this.dropZone || !this.galleryGrid || !this.fileSelectBtn) {
+        if (!this.dropZone || !this.galleryGrid || !this.fileSelectBtn || !this.fullscreenOverlay || !this.fullscreenImage) {
             console.error('Critical UI elements not found!');
         }
     }
 
     bindEvents() {
+        if (!this.fileSelectBtn || !this.closeFullscreenBtn || !this.prevBtn || !this.nextBtn || !this.fullscreenImage) {
+            console.warn('⚠️ Skipping event binding: required elements missing');
+            return;
+        }
+
         // File selection
         this.fileSelectBtn.addEventListener('click', () => this.selectFiles());
 
@@ -271,13 +276,14 @@ class ImageGallery {
                 processedCount += batch.length;
                 this.updateProgress(processedCount, imageFiles.length);
 
-                console.log(`🔍 DEBUG: Batch complete. Total processed: ${processedCount}/${imageFiles.length}, successful: ${this.images.length}, batch success: ${batchSuccessfulCount}/${batch.length}`);
+                const successSoFar = this.images.filter(img => !img.error).length;
+                console.log(`🔍 DEBUG: Batch complete. Total processed: ${processedCount}/${imageFiles.length}, successful: ${successSoFar}, batch success: ${batchSuccessfulCount}/${batch.length}`);
             }
 
-            const failedCount = imageFiles.length - this.images.length;
+            const failedCount = this.images.filter(img => img.error).length;
             const loadTime = performance.now() - startTime;
 
-            console.log(`✅ Loaded ${this.images.length} images successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
+            console.log(`✅ Loaded ${this.images.length - failedCount} images successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
             console.log('🔍 DEBUG: Memory after loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
             console.log(`📊 Average time per image: ${(loadTime / imageFiles.length).toFixed(2)}ms`);
 
@@ -303,6 +309,7 @@ class ImageGallery {
         console.log(`🚀 Starting to load ${filePaths.length} files from paths...`);
         console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
         const startTime = performance.now();
+        const prevImagesLength = this.images.length;
 
         this.showLoading();
         this.updateProgress(0, filePaths.length);
@@ -356,13 +363,15 @@ class ImageGallery {
                 processedCount += batch.length;
                 this.updateProgress(processedCount, filePaths.length);
 
-                console.log(`🔍 DEBUG: Path batch complete. Total processed: ${processedCount}/${filePaths.length}, successful: ${this.images.length}, batch success: ${batchSuccessfulCount}/${batch.length}`);
+                const successSoFar = this.images.filter(img => !img.error).length;
+                console.log(`🔍 DEBUG: Path batch complete. Total processed: ${processedCount}/${filePaths.length}, successful: ${successSoFar}, batch success: ${batchSuccessfulCount}/${batch.length}`);
             }
 
-            const failedCount = filePaths.length - this.images.length;
+            const newlyAdded = this.images.length - prevImagesLength;
+            const failedCount = this.images.filter(img => img.error).length;
             const loadTime = performance.now() - startTime;
 
-            console.log(`✅ Loaded ${this.images.length} images from paths successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
+            console.log(`✅ Loaded ${newlyAdded - failedCount} images from paths successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
             console.log('🔍 DEBUG: Memory after loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
             console.log(`📊 Average time per image: ${(loadTime / filePaths.length).toFixed(2)}ms`);
 
@@ -482,7 +491,8 @@ class ImageGallery {
                         height: img.naturalHeight,
                         aspectRatio: img.naturalWidth / img.naturalHeight,
                         size: stats.size,
-                        mtime: stats.mtime
+                        mtimeMs: stats.mtimeMs,
+                        mtimeISO: stats.mtimeISO
                     });
                 };
 
@@ -543,7 +553,8 @@ class ImageGallery {
                     height: img.naturalHeight,
                     aspectRatio: img.naturalWidth / img.naturalHeight,
                     size: stats.size,
-                    mtime: stats.mtime
+                    mtimeMs: stats.mtimeMs,
+                    mtimeISO: stats.mtimeISO
                 });
             };
             img.onerror = reject;
