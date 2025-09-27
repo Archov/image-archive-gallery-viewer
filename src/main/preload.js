@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { pathToFileURL } = require('url');
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -19,14 +20,10 @@ contextBridge.exposeInMainWorld('electronAPI', Object.freeze({
 
   // File URL encoding
   toFileUrl: (filePath) => {
-    // Convert file path to file:// URL
-    if (process.platform === 'win32') {
-      // Windows: file:///C:/path/to/file
-      return 'file:///' + filePath.replace(/\\/g, '/');
-    } else {
-      // Unix-like: file:///path/to/file
-      return 'file://' + filePath;
+    if (typeof filePath !== 'string') {
+      throw new TypeError('Expected filePath to be a string');
     }
+    return pathToFileURL(filePath).href;
   },
 
   // Debug info

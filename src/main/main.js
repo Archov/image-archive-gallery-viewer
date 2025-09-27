@@ -4,9 +4,7 @@ const fs = require('fs').promises;
 const fsNative = require('fs');
 const os = require('os');
 const { performance } = require('node:perf_hooks');
-
-// Store user-selected directories for security validation
-let allowedDirectories = new Set();
+const secureFs = require('./secure-fs');
 
 // App configuration
 let appConfig = {
@@ -29,85 +27,26 @@ async function loadAppConfig() {
 
     // Load and merge with defaults
     const configData = await fs.readFile(configPath, 'utf8');
+    const defaults = { ...appConfig };
     const loadedConfig = JSON.parse(configData);
-    appConfig = { ...appConfig, ...loadedConfig };
+    const mergedConfig = { ...defaults, ...loadedConfig };
+
+    // Validate and sanitize maxFileSizeMB
+    const parsedMaxSize = Number(mergedConfig.maxFileSizeMB);
+    if (!Number.isFinite(parsedMaxSize) || parsedMaxSize <= 0) {
+      console.warn('[CONFIG] Invalid maxFileSizeMB, reverting to default:', mergedConfig.maxFileSizeMB);
+      mergedConfig.maxFileSizeMB = defaults.maxFileSizeMB;
+    } else {
+      mergedConfig.maxFileSizeMB = parsedMaxSize;
+    }
+
+    appConfig = mergedConfig;
     console.log('[CONFIG] Loaded app config:', appConfig);
   } catch (error) {
     console.warn('[WARN] Failed to load config, using defaults:', error.message);
   }
 }
 
-// Security validation function - prevents path traversal attacks
-// This function implements comprehensive path validation to ensure file operations
-// are restricted to allowed directories and cannot escape via symlinks or ../
-function validateFilePath(filePath) {
-  if (!filePath || typeof filePath !== 'string') {
-    throw new Error('Invalid file path');
-  }
-
-  // Sanitize input: strip null bytes only (preserve UNC paths)
-  const sanitizedPath = filePath.replace(/\0/g, '');
-
-  // Normalize path to handle relative components and separators properly
-  const normalizedPath = process.platform === 'win32'
-    ? path.win32.normalize(sanitizedPath)
-    : path.normalize(sanitizedPath);
-
-  // Resolve to absolute path to prevent directory traversal
-  const absolutePath = path.resolve(normalizedPath);
-
-  // Resolve symlinks to canonical path to prevent symlink escapes
-  // SECURITY: This realpathSync call is intentional and validates the path
-  // before any file operations, preventing attacks via symbolic links
-  let canonicalPath;
-  try {
-    canonicalPath = fsNative.realpathSync(absolutePath);
-  } catch (error) {
-    throw new Error('Access denied: Unable to resolve file path');
-  }
-
-  // Helper function to check if path is within directory
-  function isPathWithinDirectory(testPath, allowedDir) {
-    const relative = path.relative(allowedDir, testPath);
-    // Normalize case on Windows for comparison
-    const normalizedRelative = process.platform === 'win32' ? relative.toLowerCase() : relative;
-    // Path is within directory if relative doesn't start with '..' and isn't '..'
-    return !normalizedRelative.startsWith('..') && normalizedRelative !== '..';
-  }
-
-  // Check against user-selected allowed directories
-  for (const allowedDir of allowedDirectories) {
-    let canonicalAllowed;
-    try {
-      canonicalAllowed = fsNative.realpathSync(allowedDir);
-    } catch {
-      // Skip non-existent entries
-      continue;
-    }
-    if (isPathWithinDirectory(canonicalPath, canonicalAllowed)) {
-      return canonicalPath;
-    }
-  }
-
-  // Check against app's builtin data directories
-  const builtinDirs = [
-    app.getPath('userData'),
-    app.getPath('temp'),
-    path.join(app.getPath('userData'), 'images')
-  ].map(dir => {
-    try {
-      return fsNative.realpathSync(dir);
-    } catch {
-      return null;
-    }
-  }).filter(Boolean);
-
-  if (builtinDirs.some(dir => isPathWithinDirectory(canonicalPath, dir))) {
-    return canonicalPath;
-  }
-
-  throw new Error('Access denied: File path not within allowed directories');
-}
 
 // Keep a global reference of the window object
 let mainWindow;
@@ -220,6 +159,9 @@ function createWindow() {
 
 // App event handlers
 app.whenReady().then(async () => {
+  // Initialize secure file system with allowed paths
+  secureFs.initializeAllowedPaths(app);
+
   // Load app configuration first
   await loadAppConfig();
 
@@ -275,12 +217,7 @@ ipcMain.handle('select-files', async () => {
   if (result.filePaths && result.filePaths.length > 0) {
     result.filePaths.forEach(filePath => {
       const dir = path.dirname(filePath);
-      try {
-        const canonicalDir = require('fs').realpathSync(dir);
-        allowedDirectories.add(canonicalDir);
-      } catch {
-        allowedDirectories.add(dir);
-      }
+      secureFs.addAllowedDirectory(dir);
     });
   }
 
@@ -294,12 +231,7 @@ ipcMain.handle('select-directory', async () => {
 
   // Add selected directory to allowed list for security
   if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-    try {
-      const canonicalDir = require('fs').realpathSync(result.filePaths[0]);
-      allowedDirectories.add(canonicalDir);
-    } catch {
-      allowedDirectories.add(result.filePaths[0]);
-    }
+    secureFs.addAllowedDirectory(result.filePaths[0]);
   }
 
   return result.canceled ? null : result.filePaths[0] || null;
@@ -310,19 +242,16 @@ ipcMain.handle('read-file', async (event, filePath) => {
     const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
     console.log(`[DEBUG] IPC read-file called for: ${displayName}`);
     const startTime = performance.now();
-    // SECURITY: validateFilePath performs comprehensive path validation including
-    // type checking, null byte removal, normalization, canonicalization, and
-    // directory boundary checking to prevent path traversal attacks
-    const validatedPath = validateFilePath(filePath);
 
-    // Check file size before reading to prevent large IPC transfers
-    const stats = await fs.stat(validatedPath);
+    // Get file stats first for size check (secureFs validates path automatically)
+    const stats = await secureFs.stat(filePath);
     const maxFileSizeBytes = appConfig.maxFileSizeMB * 1024 * 1024;
     if (stats.size > maxFileSizeBytes) {
       throw new Error(`File too large: ${(stats.size / (1024 * 1024)).toFixed(2)} MB (limit: ${appConfig.maxFileSizeMB} MB)`);
     }
 
-    const buffer = await fs.readFile(validatedPath);
+    // Read file (secureFs validates path automatically)
+    const buffer = await secureFs.readFile(filePath);
     const readTime = performance.now() - startTime;
     console.log(`[DEBUG] File read completed in ${readTime.toFixed(2)}ms, size: ${(buffer.length / 1024).toFixed(2)}KB`);
     return buffer;
@@ -337,11 +266,9 @@ ipcMain.handle('get-file-stats', async (event, filePath) => {
     const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
     console.log(`[DEBUG] IPC get-file-stats called for: ${displayName}`);
     const startTime = performance.now();
-    // SECURITY: validateFilePath performs comprehensive path validation including
-    // type checking, null byte removal, normalization, canonicalization, and
-    // directory boundary checking to prevent path traversal attacks
-    const validatedPath = validateFilePath(filePath);
-    const stats = await fs.stat(validatedPath);
+
+    // Get file stats (secureFs validates path automatically)
+    const stats = await secureFs.stat(filePath);
     const statTime = performance.now() - startTime;
     console.log(`[DEBUG] File stats completed in ${statTime.toFixed(2)}ms, size: ${(stats.size / 1024).toFixed(2)}KB`);
     return {

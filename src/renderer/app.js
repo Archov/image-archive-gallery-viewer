@@ -78,13 +78,15 @@ class ImageGallery {
 
     async syncLogsToMain() {
         if (this.debugLogs.length > 0) {
+            // Snapshot logs to prevent loss during async operation
+            const logsToSend = this.debugLogs.splice(0, this.debugLogs.length);
             try {
-                await window.electronAPI.appendRendererLogs(this.debugLogs);
-                console.log(`🔍 DEBUG: Synced ${this.debugLogs.length} logs to main process`);
-                // Clear the logs after successful sync
-                this.debugLogs = [];
+                await window.electronAPI.appendRendererLogs(logsToSend);
+                console.log(`[DEBUG] Synced ${logsToSend.length} logs to main process`);
             } catch (error) {
-                console.error('🔍 DEBUG: Failed to sync logs to main process:', error);
+                // Restore logs if sync failed
+                this.debugLogs = logsToSend.concat(this.debugLogs);
+                console.error('[ERROR] Failed to sync logs to main process:', error);
             }
         }
     }
@@ -92,7 +94,7 @@ class ImageGallery {
     async exportDebugLogs() {
         // Legacy method - now just triggers immediate sync
         await this.syncLogsToMain();
-        console.log('🔍 DEBUG: Logs synced to main process debug file');
+        console.log('[DEBUG] Logs synced to main process debug file');
     }
 
     initializeElements() {
