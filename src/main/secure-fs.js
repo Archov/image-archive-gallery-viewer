@@ -1,6 +1,6 @@
-const fs = require('fs').promises
-const fsNative = require('fs')
-const path = require('path')
+const fs = require('node:fs').promises
+const fsNative = require('node:fs')
+const path = require('node:path')
 
 // Helper function to check if a path is inside another path
 // (replacement for is-path-inside library which is ESM-only)
@@ -94,7 +94,9 @@ function validateFilePath(filePath) {
       const parentDir = path.dirname(absolute)
       try {
         const canonicalParent = fsNative.realpathSync(parentDir)
-        canonical = path.join(canonicalParent, path.basename(absolute))
+        // SECURITY: Resolve the write target against canonical parent and re-validate
+        const resolvedTarget = path.resolve(canonicalParent, path.basename(absolute))
+        canonical = resolvedTarget
       } catch (parentError) {
         throw new Error(`Parent directory resolution failed: ${parentError.message}`)
       }

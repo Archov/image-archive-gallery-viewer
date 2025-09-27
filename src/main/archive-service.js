@@ -1,7 +1,7 @@
-const path = require('path')
-const fs = require('fs').promises
-const fsNative = require('fs')
-const crypto = require('crypto')
+const path = require('node:path')
+const fs = require('node:fs').promises
+const fsNative = require('node:fs')
+const crypto = require('node:crypto')
 const AdmZip = require('adm-zip')
 const Unrar = require('node-unrar-js')
 const Seven = require('node-7z')
@@ -232,7 +232,7 @@ class ArchiveService {
               progressCallback(processedFiles, imageEntries.length)
             }
           } catch (_error) {
-                        console.warn(`[ARCHIVE] Failed to extract entry:`, _error.message)
+            console.warn(`[ARCHIVE] Failed to extract entry:`, _error.message)
           }
         })
 
@@ -257,8 +257,8 @@ class ArchiveService {
         const { files } = extractor.extract()
 
         // Count total image files for progress calculation
-        const imageFiles = files.filter((file) =>
-          !file.fileHeader.flags.directory && this.isImageFile(file.fileHeader.name)
+        const imageFiles = files.filter(
+          (file) => !file.fileHeader.flags.directory && this.isImageFile(file.fileHeader.name)
         )
         const totalImageFiles = imageFiles.length
 
@@ -314,7 +314,10 @@ class ArchiveService {
   async extract7z(archivePath, extractPath, progressCallback) {
     return new Promise((resolve, reject) => {
       // SECURITY: Extract to temporary directory first to avoid extracting potentially dangerous files
-      const tempExtractPath = path.join(this.tempDir, `temp_7z_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`)
+      const tempExtractPath = path.join(
+        this.tempDir,
+        `temp_7z_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+      )
       fs.mkdir(tempExtractPath, { recursive: true })
         .then(() => {
           const stream = Seven.extract(archivePath, tempExtractPath, {
@@ -335,13 +338,16 @@ class ArchiveService {
               // Move only image files to the final extraction directory
               const extractedFiles = []
               for (const file of allFiles) {
-                const finalPath = path.join(extractPath, path.relative(tempExtractPath, file.extractedPath))
+                const finalPath = path.join(
+                  extractPath,
+                  path.relative(tempExtractPath, file.extractedPath)
+                )
                 await fs.mkdir(path.dirname(finalPath), { recursive: true })
                 await fs.rename(file.extractedPath, finalPath)
 
                 extractedFiles.push({
                   ...file,
-                  extractedPath: finalPath
+                  extractedPath: finalPath,
                 })
               }
 
@@ -454,10 +460,7 @@ class ArchiveService {
 
     // Create extraction directory
     const randomBytes = crypto.randomBytes(8).toString('hex')
-    const extractDir = path.join(
-      this.tempDir,
-      `extract_${Date.now()}_${randomBytes}`
-    )
+    const extractDir = path.join(this.tempDir, `extract_${Date.now()}_${randomBytes}`)
     await fs.mkdir(extractDir, { recursive: true })
 
     let extractedFiles = []
@@ -524,7 +527,9 @@ class ArchiveService {
             const resolvedTempDir = path.resolve(this.tempDir)
 
             if (!resolvedExtractDir.startsWith(resolvedTempDir)) {
-              console.warn(`[ARCHIVE] Skipping cleanup of directory outside temp area: ${archive.extractDir}`)
+              console.warn(
+                `[ARCHIVE] Skipping cleanup of directory outside temp area: ${archive.extractDir}`
+              )
               delete db.archives[hash]
               cleanedCount++
               continue

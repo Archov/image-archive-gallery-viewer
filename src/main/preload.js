@@ -1,5 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron')
-const { pathToFileURL } = require('url')
+const { pathToFileURL } = require('node:url')
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object

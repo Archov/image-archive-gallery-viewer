@@ -213,8 +213,11 @@ class ImageGallery {
       const filePaths = await window.electronAPI.selectFiles()
       if (filePaths && filePaths.length > 0) {
         const toLower = (p) => p.toLowerCase()
-        const isImg = (p) => ['.jpg','.jpeg','.png','.gif','.webp','.bmp','.tiff','.svg'].some(ext => toLower(p).endsWith(ext))
-        const isArc = (p) => ['.zip','.rar','.7z'].some(ext => toLower(p).endsWith(ext))
+        const isImg = (p) =>
+          ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg'].some((ext) =>
+            toLower(p).endsWith(ext)
+          )
+        const isArc = (p) => ['.zip', '.rar', '.7z'].some((ext) => toLower(p).endsWith(ext))
         const imagePaths = filePaths.filter(isImg)
         const archivePaths = filePaths.filter(isArc)
 
@@ -611,7 +614,7 @@ class ImageGallery {
         img.src = fileUrl
       })
     } catch (error) {
-          console.error(`Error processing file:`, error)
+      console.error(`Error processing file:`, error)
       return {
         id: this.generateUniqueId(),
         name: filePath.split(/[/\\]/).pop(),
@@ -725,7 +728,8 @@ class ImageGallery {
           if (choice) {
             // User wants to reprocess
             this.loadingText.textContent = `Reprocessing ${archiveFile.name || 'archive'}...`
-            const unsubscribeProgressReprocess = window.electronAPI.onArchiveProgress(progressHandler)
+            const unsubscribeProgressReprocess =
+              window.electronAPI.onArchiveProgress(progressHandler)
 
             const reprocessResult = await window.electronAPI.processArchive(archiveFile.path, true)
             unsubscribeProgressReprocess()
