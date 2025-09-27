@@ -1,601 +1,764 @@
-// Image Gallery Manager - Renderer Process Entry Point
-// This is a temporary bootstrap that will be replaced with a modern framework (React/Vue/Svelte)
-
-class ImageGalleryManager {
+// Image Gallery Manager - Core Functionality
+class ImageGallery {
     constructor() {
-        this.initialized = false;
-        this.currentView = 'loading';
+        this.images = [];
+        this.currentIndex = 0;
+        this.isFullscreen = false;
+        this.debugLogs = [];
+        this.blobUrls = [];
+        this.fullscreenWheelHandler = null;
+        this.idCounter = 0; // For collision-resistant ID generation
 
-        this.init();
+        this.initializeElements();
+        this.bindEvents();
+        this.setupDragAndDrop();
+
+        // Override console methods to capture logs
+        this.setupDebugCapture();
+
+        console.log('🔍 DEBUG: Gallery initialized with debug logging');
+        console.log('[DEBUG] Renderer logs will be automatically saved to main process debug file');
+
+        // Set up automatic log syncing
+        this.setupAutoLogSync();
     }
 
-    async init() {
-        try {
-            // Update loading status
-            window.loadingUtils.updateStatus('Initializing application...');
-
-            // Wait for electron API to be available
-            await this.waitForElectronAPI();
-
-            // Initialize database connection
-            window.loadingUtils.updateStatus('Connecting to database...');
-            await this.initializeDatabase();
-
-            // Load settings
-            window.loadingUtils.updateStatus('Loading settings...');
-            await this.loadSettings();
-
-            // Initialize UI components
-            window.loadingUtils.updateStatus('Setting up interface...');
-            await this.initializeUI();
-
-            // Mark as initialized
-            this.initialized = true;
-
-            // Hide loading screen and show main interface
-            window.loadingUtils.hide();
-
-            console.log('Image Gallery Manager initialized successfully');
-        } catch (error) {
-            console.error('Failed to initialize application:', error);
-            this.showError('Failed to initialize application: ' + error.message);
-        }
+    generateUniqueId() {
+        return `img_${++this.idCounter}_${Date.now()}`;
     }
 
-    async waitForElectronAPI() {
-        return new Promise((resolve) => {
-            const checkAPI = () => {
-                if (window.electronAPI) {
-                    resolve();
-                } else {
-                    setTimeout(checkAPI, 10);
-                }
-            };
-            checkAPI();
+    setupDebugCapture() {
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+
+        console.log = (...args) => {
+            const message = args.map(arg =>
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            this.debugLogs.push(`[LOG ${new Date().toISOString()}] ${message}`);
+            originalLog.apply(console, args);
+        };
+
+        console.error = (...args) => {
+            const message = args.map(arg =>
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            this.debugLogs.push(`[ERROR ${new Date().toISOString()}] ${message}`);
+            originalError.apply(console, args);
+        };
+
+        console.warn = (...args) => {
+            const message = args.map(arg =>
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            this.debugLogs.push(`[WARN ${new Date().toISOString()}] ${message}`);
+            originalWarn.apply(console, args);
+        };
+    }
+
+    setupAutoLogSync() {
+        // Sync logs every 30 seconds
+        this.logSyncInterval = setInterval(() => {
+            this.syncLogsToMain();
+        }, 30000);
+
+        // Sync logs before page unload
+        window.addEventListener('beforeunload', () => {
+            this.syncLogsToMain();
         });
-    }
 
-    async initializeDatabase() {
-        const result = await window.electronAPI.db.init();
-        if (!result.success) {
-            throw new Error('Database initialization failed: ' + result.error);
-        }
-    }
-
-    async loadSettings() {
-        const result = await window.electronAPI.settings.get();
-        if (result.success) {
-            this.settings = result.data;
-        } else {
-            console.warn('Failed to load settings, using defaults');
-            this.settings = {};
-        }
-    }
-
-    async initializeUI() {
-        // Create main UI structure
-        this.createMainLayout();
-
-        // Initialize components
-        this.initializeHeader();
-        this.initializeSidebar();
-        this.initializeMainContent();
-        this.initializeStatusBar();
-
-        // Set up event listeners
-        this.setupEventListeners();
-
-        // Load initial data
-        await this.loadInitialData();
-    }
-
-    createMainLayout() {
-        const app = document.getElementById('app');
-
-        app.innerHTML = `
-            <div class="app-container">
-                <header class="app-header">
-                    <div class="header-left">
-                        <h1 class="app-title">Image Gallery Manager</h1>
-                    </div>
-                    <div class="header-center">
-                        <div class="search-container">
-                            <input type="text" class="search-input" placeholder="Search images, tags, artists...">
-                            <button class="search-button">🔍</button>
-                        </div>
-                    </div>
-                    <div class="header-right">
-                        <button class="header-button" id="settings-btn">⚙️</button>
-                        <button class="header-button" id="minimize-btn">−</button>
-                        <button class="header-button" id="maximize-btn">⬜</button>
-                        <button class="header-button" id="close-btn">✕</button>
-                    </div>
-                </header>
-
-                <div class="app-main">
-                    <aside class="sidebar">
-                        <nav class="sidebar-nav">
-                            <button class="nav-button active" data-view="gallery">
-                                🖼️ Gallery
-                            </button>
-                            <button class="nav-button" data-view="tags">
-                                🏷️ Tags
-                            </button>
-                            <button class="nav-button" data-view="sets">
-                                📁 Sets
-                            </button>
-                            <button class="nav-button" data-view="import">
-                                📥 Import
-                            </button>
-                            <button class="nav-button" data-view="settings">
-                                ⚙️ Settings
-                            </button>
-                        </nav>
-                    </aside>
-
-                    <main class="main-content">
-                        <div class="content-area" id="content-area">
-                            <!-- Content will be loaded here -->
-                        </div>
-                    </main>
-                </div>
-
-                <footer class="status-bar">
-                    <div class="status-left">
-                        <span id="status-text">Ready</span>
-                    </div>
-                    <div class="status-right">
-                        <span id="stats-text">0 images</span>
-                    </div>
-                </footer>
-            </div>
-        `;
-    }
-
-    initializeHeader() {
-        // Window controls - with error handling
-        const minimizeBtn = document.getElementById('minimize-btn');
-        const maximizeBtn = document.getElementById('maximize-btn');
-        const closeBtn = document.getElementById('close-btn');
-
-        if (minimizeBtn) {
-            minimizeBtn.addEventListener('click', () => {
-                window.electronAPI.window.minimize();
-            });
-        }
-
-        if (maximizeBtn) {
-            maximizeBtn.addEventListener('click', () => {
-                window.electronAPI.window.maximize();
-            });
-        }
-
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                window.electronAPI.window.close();
-            });
-        }
-    }
-
-    initializeSidebar() {
-        // Navigation buttons
-        const navButtons = document.querySelectorAll('.nav-button');
-
-        navButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                const view = e.target.dataset.view;
-                this.switchView(view);
-            });
-        });
-    }
-
-    initializeMainContent() {
-        this.showGalleryView();
-    }
-
-    initializeStatusBar() {
-        // Status bar is already created in HTML
-    }
-
-    setupEventListeners() {
-        // Search functionality
-        const searchInput = document.querySelector('.search-input');
-        if (searchInput) {
-            searchInput.addEventListener('input', (e) => {
-                this.handleSearch(e.target.value);
-            });
-        }
-
-        // Import card event listeners
-        const archiveCard = document.querySelector('.import-archive-card');
-        const urlCard = document.querySelector('.import-url-card');
-        const directoryCard = document.querySelector('.import-directory-card');
-
-        if (archiveCard) {
-            archiveCard.addEventListener('click', () => this.importFromArchive());
-        }
-        if (urlCard) {
-            urlCard.addEventListener('click', () => this.importFromUrl());
-        }
-        if (directoryCard) {
-            directoryCard.addEventListener('click', () => this.importFromDirectory());
-        }
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey) {
-                switch (e.key) {
-                    case 'f':
-                        e.preventDefault();
-                        if (searchInput) searchInput.focus();
-                        break;
-                    case 'k':
-                        if (e.shiftKey) {
-                            e.preventDefault();
-                            // TODO: Open command palette
-                        }
-                        break;
-                }
+        // Sync logs when app becomes hidden (minimized, etc.)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.syncLogsToMain();
             }
         });
     }
 
-    async loadInitialData() {
-        try {
-            // Load tags
-            const tagsResult = await window.electronAPI.tags.getAll();
-            if (tagsResult.success) {
-                this.tags = tagsResult.data;
-            } else {
-                console.error('Failed to load tags:', tagsResult.error);
-                this.showError('Failed to load tags. Some features may not work properly.');
+    async syncLogsToMain() {
+        if (this.debugLogs.length > 0) {
+            // Snapshot logs to prevent loss during async operation
+            const logsToSend = this.debugLogs.splice(0, this.debugLogs.length);
+            try {
+                await window.electronAPI.appendRendererLogs(logsToSend);
+                console.log(`[DEBUG] Synced ${logsToSend.length} logs to main process`);
+            } catch (error) {
+                // Restore logs if sync failed
+                this.debugLogs = logsToSend.concat(this.debugLogs);
+                console.error('[ERROR] Failed to sync logs to main process:', error);
             }
-
-            // Load image count - Note: db.query removed for security, need to add specific IPC channel
-            // For now, we'll show 0 until we implement proper image counting
-            this.updateStats(0);
-
-            this.updateStatus('Ready');
-        } catch (error) {
-            console.error('Failed to load initial data:', error);
-            this.showError('Failed to load application data. Please restart the application.');
         }
     }
 
-    switchView(view) {
-        // Update active navigation button
-        document.querySelectorAll('.nav-button').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.querySelector(`[data-view="${view}"]`).classList.add('active');
-
-        // Switch content
-        switch (view) {
-            case 'gallery':
-                this.showGalleryView();
-                break;
-            case 'tags':
-                this.showTagsView();
-                break;
-            case 'sets':
-                this.showSetsView();
-                break;
-            case 'import':
-                this.showImportView();
-                break;
-            case 'settings':
-                this.showSettingsView();
-                break;
-        }
-
-        // Keep currentView in sync
-        this.currentView = view;
+    async exportDebugLogs() {
+        // Legacy method - now just triggers immediate sync
+        await this.syncLogsToMain();
+        console.log('[DEBUG] Logs synced to main process debug file');
     }
 
-    showGalleryView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="gallery-view">
-                <div class="gallery-controls">
-                    <div class="control-group">
-                        <label>Sort by:</label>
-                        <select class="control-select">
-                            <option value="date-desc">Newest First</option>
-                            <option value="date-asc">Oldest First</option>
-                            <option value="name">Name</option>
-                            <option value="artist">Artist</option>
-                        </select>
-                    </div>
-                    <div class="control-group">
-                        <label>View:</label>
-                        <select class="control-select">
-                            <option value="grid">Grid</option>
-                            <option value="list">List</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="gallery-grid" id="gallery-grid">
-                    <div class="empty-state">
-                        <div class="empty-icon">🖼️</div>
-                        <h3>No Images Yet</h3>
-                        <p>Import some images to get started</p>
-                        <button class="primary-button" id="import-images-btn">Import Images</button>
-                    </div>
-                </div>
-            </div>
-        `;
+    initializeElements() {
+        // Main containers
+        this.dropZone = document.getElementById('drop-zone');
+        this.galleryGrid = document.getElementById('gallery-grid');
+        this.fullscreenOverlay = document.getElementById('fullscreen-overlay');
+        this.loadingIndicator = document.getElementById('loading-indicator');
 
-        // Add event listener for import button (consistent with other event handling)
-        const importBtn = document.getElementById('import-images-btn');
-        if (importBtn) {
-            importBtn.addEventListener('click', () => this.switchView('import'));
+        // Buttons and controls
+        this.fileSelectBtn = document.getElementById('file-select-btn');
+        this.closeFullscreenBtn = document.getElementById('close-fullscreen');
+        this.prevBtn = document.getElementById('prev-btn');
+        this.nextBtn = document.getElementById('next-btn');
+
+        // Image elements
+        this.fullscreenImage = document.getElementById('fullscreen-image');
+
+        // Loading elements
+        this.loadingText = document.getElementById('loading-text');
+        this.loadingProgress = document.getElementById('loading-progress');
+        this.progressFill = document.getElementById('progress-fill');
+        this.progressText = document.getElementById('progress-text');
+
+        // Verify critical elements exist
+        if (!this.dropZone || !this.galleryGrid || !this.fileSelectBtn || !this.fullscreenOverlay || !this.fullscreenImage) {
+            console.error('Critical UI elements not found!');
         }
     }
 
-    showTagsView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="tags-view">
-                <div class="tags-header">
-                    <h2>Tag Management</h2>
-                    <button class="primary-button" id="add-tag-btn">Add Tag</button>
-                </div>
-                <div class="tags-list" id="tags-list">
-                    <!-- Tags will be loaded here -->
-                </div>
-            </div>
-        `;
-
-        this.loadTagsList();
-    }
-
-    showSetsView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="sets-view">
-                <div class="sets-header">
-                    <h2>Image Sets</h2>
-                    <button class="primary-button">Create Set</button>
-                </div>
-                <div class="sets-grid" id="sets-grid">
-                    <div class="empty-state">
-                        <div class="empty-icon">📁</div>
-                        <h3>No Sets Yet</h3>
-                        <p>Create sets to group related images</p>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    showImportView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="import-view">
-                <div class="import-header">
-                    <h2>Import Images</h2>
-                </div>
-                <div class="import-options">
-                    <div class="import-card import-archive-card">
-                        <div class="card-icon">📦</div>
-                        <h3>From Archive</h3>
-                        <p>Import images from ZIP, RAR, or 7Z files</p>
-                    </div>
-                    <div class="import-card import-url-card">
-                        <div class="card-icon">🌐</div>
-                        <h3>From URL</h3>
-                        <p>Download and import from web URLs</p>
-                    </div>
-                    <div class="import-card import-directory-card">
-                        <div class="card-icon">📁</div>
-                        <h3>From Directory</h3>
-                        <p>Import images from local folders</p>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    showSettingsView() {
-        const contentArea = document.getElementById('content-area');
-        contentArea.innerHTML = `
-            <div class="settings-view">
-                <div class="settings-header">
-                    <h2>Settings</h2>
-                </div>
-                <div class="settings-content">
-                    <div class="setting-group">
-                        <h3>Library</h3>
-                        <div class="setting-item">
-                            <label>Library Size Limit (GB)</label>
-                            <input type="number" min="0.5" max="100" step="0.5" value="2">
-                        </div>
-                    </div>
-                    <div class="setting-group">
-                        <h3>Interface</h3>
-                        <div class="setting-item">
-                            <label>Theme</label>
-                            <select>
-                                <option value="dark">Dark</option>
-                                <option value="light">Light</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    async loadTagsList() {
-        const tagsList = document.getElementById('tags-list');
-
-        // Clear existing content
-        tagsList.innerHTML = '';
-
-        if (!this.tags || this.tags.length === 0) {
-            const emptyMessage = document.createElement('p');
-            emptyMessage.className = 'empty-message';
-            emptyMessage.textContent = 'No tags yet. Create your first tag to organize your images.';
-            tagsList.appendChild(emptyMessage);
+    bindEvents() {
+        if (!this.fileSelectBtn || !this.closeFullscreenBtn || !this.prevBtn || !this.nextBtn || !this.fullscreenImage) {
+            console.warn('⚠️ Skipping event binding: required elements missing');
             return;
         }
 
-        // Create tag items safely using DOM API
-        const fragment = document.createDocumentFragment();
-        for (const tag of this.tags) {
-            const tagItem = document.createElement('div');
-            tagItem.className = 'tag-item';
-            tagItem.style.borderLeftColor = tag.color || '#007acc';
+        // File selection
+        this.fileSelectBtn.addEventListener('click', () => this.selectFiles());
 
-            const tagInfo = document.createElement('div');
-            tagInfo.className = 'tag-info';
+        // Fullscreen controls
+        this.closeFullscreenBtn.addEventListener('click', () => this.closeFullscreen());
+        this.prevBtn.addEventListener('click', () => this.showPrevious());
+        this.nextBtn.addEventListener('click', () => this.showNext());
 
-            const tagName = document.createElement('span');
-            tagName.className = 'tag-name';
-            tagName.textContent = tag.name; // Safe: textContent prevents XSS
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => this.handleKeydown(e));
 
-            const tagCategory = document.createElement('span');
-            tagCategory.className = 'tag-category';
-            tagCategory.textContent = tag.category; // Safe: textContent prevents XSS
-
-            tagInfo.appendChild(tagName);
-            tagInfo.appendChild(tagCategory);
-
-            const tagStats = document.createElement('div');
-            tagStats.className = 'tag-stats';
-
-            const tagCount = document.createElement('span');
-            tagCount.className = 'tag-count';
-            tagCount.textContent = `${tag.usage_count || 0} images`; // Safe: textContent prevents XSS
-
-            tagStats.appendChild(tagCount);
-
-            tagItem.appendChild(tagInfo);
-            tagItem.appendChild(tagStats);
-            fragment.appendChild(tagItem);
-        }
-
-        tagsList.appendChild(fragment);
+        // Fullscreen image click to close
+        this.fullscreenImage.addEventListener('click', () => this.closeFullscreen());
     }
 
-    // Import methods (placeholders for now)
-    async importFromArchive() {
-        this.updateStatus('Archive import not yet implemented');
-    }
+    setupDragAndDrop() {
+        const galleryContainer = document.getElementById('gallery-container');
 
-    async importFromUrl() {
-        this.updateStatus('URL import not yet implemented');
-    }
-
-    async importFromDirectory() {
-        this.updateStatus('Directory import not yet implemented');
-    }
-
-    handleSearch(query) {
-        // TODO: Implement search functionality
-        console.log('Search query:', query);
-    }
-
-    updateStatus(text) {
-        const statusText = document.getElementById('status-text');
-        if (statusText) {
-            statusText.textContent = text;
-        }
-    }
-
-    updateStats(count) {
-        const statsText = document.getElementById('stats-text');
-        if (statsText) {
-            statsText.textContent = `${count} image${count !== 1 ? 's' : ''}`;
-        }
-    }
-
-    showError(message) {
-        // Create a proper error dialog instead of using alert()
-        const errorDialog = document.createElement('div');
-        Object.assign(errorDialog.style, {
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: '#2d2d2d',
-            color: '#ffffff',
-            padding: '20px',
-            borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-            zIndex: '10000',
-            maxWidth: '400px',
-            fontFamily: 'Arial, sans-serif'
-        });
-
-        // Create dialog content safely using DOM API
-        const headerDiv = document.createElement('div');
-        Object.assign(headerDiv.style, {
-            display: 'flex',
-            alignItems: 'center',
-            marginBottom: '15px'
-        });
-
-        const warningSpan = document.createElement('span');
-        Object.assign(warningSpan.style, {
-            color: '#ff6b6b',
-            fontSize: '20px',
-            marginRight: '10px'
-        });
-        warningSpan.textContent = '⚠️';
-
-        const titleStrong = document.createElement('strong');
-        titleStrong.textContent = 'Error';
-
-        headerDiv.appendChild(warningSpan);
-        headerDiv.appendChild(titleStrong);
-
-        const messageP = document.createElement('p');
-        Object.assign(messageP.style, {
-            margin: '0 0 20px 0',
-            lineHeight: '1.4'
-        });
-        messageP.textContent = message; // Safe: textContent prevents XSS
-
-        const okBtn = document.createElement('button');
-        Object.assign(okBtn.style, {
-            background: '#007acc',
-            color: 'white',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            float: 'right'
-        });
-        okBtn.textContent = 'OK';
-
-        errorDialog.appendChild(headerDiv);
-        errorDialog.appendChild(messageP);
-        errorDialog.appendChild(okBtn);
-
-        document.body.appendChild(errorDialog);
-
-        if (okBtn) {
-            okBtn.addEventListener('click', () => {
-                document.body.removeChild(errorDialog);
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            galleryContainer.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
             });
+        });
+
+        galleryContainer.addEventListener('dragenter', (e) => {
+            this.dropZone.classList.add('drag-over');
+        });
+
+        galleryContainer.addEventListener('dragleave', (e) => {
+            // Only remove class if we're actually leaving the drop zone
+            if (!galleryContainer.contains(e.relatedTarget)) {
+                this.dropZone.classList.remove('drag-over');
+            }
+        });
+
+        galleryContainer.addEventListener('drop', (e) => {
+            this.dropZone.classList.remove('drag-over');
+            const files = Array.from(e.dataTransfer.files);
+            this.loadFiles(files);
+        });
+
+        // No hover effects to optimize
+    }
+
+
+    async selectFiles() {
+        try {
+            const filePaths = await window.electronAPI.selectFiles();
+            if (filePaths && filePaths.length > 0) {
+                await this.loadFilesFromPaths(filePaths);
+            }
+        } catch (error) {
+            console.error('Error selecting files:', error);
+            alert('Error selecting files: ' + error.message);
+        }
+    }
+
+    async loadFiles(files) {
+        console.log('🔍 DEBUG: loadFiles called with', files.length, 'files');
+
+        // Clean up previous blob URLs to prevent memory leaks
+        this.cleanupBlobUrls();
+
+        const imageFiles = files.filter(file => this.isImageFile(file));
+        console.log('🔍 DEBUG: Filtered to', imageFiles.length, 'image files');
+
+        if (imageFiles.length === 0) {
+            console.log('🔍 DEBUG: No image files found');
+            alert('No valid image files selected.');
+            return;
         }
 
-        // Auto-remove after 10 seconds
-        setTimeout(() => {
-            if (document.body.contains(errorDialog)) {
-                document.body.removeChild(errorDialog);
+        console.log(`🚀 Starting to load ${imageFiles.length} files...`);
+        console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+        const startTime = performance.now();
+
+        this.showLoading();
+        this.updateProgress(0, imageFiles.length);
+        this.images = [];
+
+        try {
+            // Adaptive batch size based on file count and estimated memory
+            const batchSize = imageFiles.length < 10 ? 2 :
+                              imageFiles.length < 50 ? 3 :
+                              imageFiles.length < 100 ? 4 : 5;
+            let processedCount = 0;
+
+            console.log(`🔍 DEBUG: Processing in batches of ${batchSize}...`);
+
+            for (let i = 0; i < imageFiles.length; i += batchSize) {
+                const batch = imageFiles.slice(i, i + batchSize);
+                console.log(`🔍 DEBUG: Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(imageFiles.length/batchSize)} (${batch.length} files)`);
+
+                const batchPromises = batch.map(file => this.processImageFile(file));
+                const batchResults = await Promise.allSettled(batchPromises);
+
+                // Process settled results: collect all results (including errors for display), log rejections
+                const allResults = [];
+                let batchSuccessfulCount = 0;
+
+                batchResults.forEach((settled, idx) => {
+                    if (settled.status === 'fulfilled') {
+                        const result = settled.value;
+                        if (result) {
+                            allResults.push(result);
+                            if (!result.error) {
+                                batchSuccessfulCount++;
+                            }
+                        }
+                        return;
+                    }
+
+                    const source = batch[idx];
+                    console.error('❌ Promise rejected:', settled.reason);
+                    allResults.push({
+                        id: this.generateUniqueId(),
+                        name: source?.name || source?.path || 'Unknown',
+                        path: source?.path,
+                        error: true,
+                        dataUrl: null
+                    });
+                });
+
+                this.images.push(...allResults);
+
+                processedCount += batch.length;
+                this.updateProgress(processedCount, imageFiles.length);
+
+                const successSoFar = this.images.filter(img => !img.error).length;
+                console.log(`🔍 DEBUG: Batch complete. Total processed: ${processedCount}/${imageFiles.length}, successful: ${successSoFar}, batch success: ${batchSuccessfulCount}/${batch.length}`);
             }
-        }, 10000);
+
+            const failedCount = this.images.filter(img => img.error).length;
+            const loadTime = performance.now() - startTime;
+
+            console.log(`✅ Loaded ${this.images.length - failedCount} images successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
+            console.log('🔍 DEBUG: Memory after loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+            console.log(`📊 Average time per image: ${(loadTime / imageFiles.length).toFixed(2)}ms`);
+
+            console.log('🔍 DEBUG: Rendering gallery...');
+            this.renderGallery();
+            console.log('🔍 DEBUG: Hiding drop zone...');
+            this.hideDropZone();
+            console.log('✅ Gallery load complete!');
+        } catch (error) {
+            console.error('❌ Error loading files:', error);
+            alert('Error loading images: ' + error.message);
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async loadFilesFromPaths(filePaths) {
+        console.log('🔍 DEBUG: loadFilesFromPaths called with', filePaths.length, 'paths');
+
+        // Clean up previous blob URLs to prevent memory leaks
+        this.cleanupBlobUrls();
+
+        console.log(`🚀 Starting to load ${filePaths.length} files from paths...`);
+        console.log('🔍 DEBUG: Memory before loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+        const startTime = performance.now();
+
+        this.showLoading();
+        this.updateProgress(0, filePaths.length);
+        this.images = [];
+
+        try {
+            // Adaptive batch size based on file count and estimated memory
+            const batchSize = filePaths.length < 10 ? 2 :
+                              filePaths.length < 50 ? 3 :
+                              filePaths.length < 100 ? 4 : 5;
+            let processedCount = 0;
+
+            console.log(`🔍 DEBUG: Processing file paths in batches of ${batchSize}...`);
+
+            for (let i = 0; i < filePaths.length; i += batchSize) {
+                const batch = filePaths.slice(i, i + batchSize);
+                console.log(`🔍 DEBUG: Processing path batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(filePaths.length/batchSize)} (${batch.length} files)`);
+
+                const batchPromises = batch.map(filePath => this.processImageFileFromPath(filePath));
+                const batchResults = await Promise.allSettled(batchPromises);
+
+                // Process settled results: collect all results (including errors for display), log rejections
+                const allResults = [];
+                let batchSuccessfulCount = 0;
+
+                batchResults.forEach((settled, idx) => {
+                    if (settled.status === 'fulfilled') {
+                        const result = settled.value;
+                        if (result) {
+                            allResults.push(result);
+                            if (!result.error) {
+                                batchSuccessfulCount++;
+                            }
+                        }
+                        return;
+                    }
+
+                    const source = batch[idx];
+                    console.error('❌ Promise rejected:', settled.reason);
+                    allResults.push({
+                        id: this.generateUniqueId(),
+                        name: source?.name || source?.path || 'Unknown',
+                        path: source?.path,
+                        error: true,
+                        dataUrl: null
+                    });
+                });
+
+                this.images.push(...allResults);
+
+                processedCount += batch.length;
+                this.updateProgress(processedCount, filePaths.length);
+
+                const successSoFar = this.images.filter(img => !img.error).length;
+                console.log(`🔍 DEBUG: Path batch complete. Total processed: ${processedCount}/${filePaths.length}, successful: ${successSoFar}, batch success: ${batchSuccessfulCount}/${batch.length}`);
+            }
+
+            const successCount = this.images.filter(img => !img.error).length;
+            const failedCount = this.images.length - successCount;
+            const loadTime = performance.now() - startTime;
+
+            console.log(`✅ Loaded ${successCount} images from paths successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`);
+            console.log('🔍 DEBUG: Memory after loading:', performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A');
+            console.log(`📊 Average time per image: ${(loadTime / filePaths.length).toFixed(2)}ms`);
+
+            console.log('🔍 DEBUG: Rendering gallery...');
+            this.renderGallery();
+            console.log('🔍 DEBUG: Hiding drop zone...');
+            this.hideDropZone();
+            console.log('✅ Gallery load from paths complete!');
+        } catch (error) {
+            console.error('❌ Error loading files from paths:', error);
+            alert('Error loading images: ' + error.message);
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async processImageFile(file) {
+        const startTime = performance.now();
+        console.log(`📁 Processing dragged file ${file.name}...`);
+
+        // For Electron, we can use the file path directly instead of FileReader
+        // This avoids the slow base64 encoding of large files
+        if (file.path) {
+            // Try to get file:// URL from path
+            const fileUrl = window.electronAPI.toFileUrl(file.path);
+
+            if (fileUrl) {
+                // Direct file path available (usually on desktop)
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
+
+                    img.onload = () => {
+                        const processTime = performance.now() - startTime;
+                        console.log(`✅ Processed ${file.name} in ${processTime.toFixed(2)}ms`);
+                        resolve({
+                            id: this.generateUniqueId(),
+                            name: file.name,
+                            path: file.path,
+                            dataUrl: fileUrl,
+                            width: img.naturalWidth,
+                            height: img.naturalHeight,
+                            aspectRatio: img.naturalWidth / img.naturalHeight,
+                            file: file
+                        });
+                    };
+                    img.onerror = () => {
+                        console.log(`❌ Failed to load dragged image ${file.name}, falling back to FileReader`);
+                        // Fallback to FileReader if file:// URL fails
+                        this.fallbackProcessImageFile(file, startTime).then(resolve).catch(reject);
+                    };
+                    // Don't set crossOrigin for file:// URLs
+                    img.src = fileUrl;
+                });
+            } else {
+                // File path exists but URL generation failed, use FileReader directly
+                return this.fallbackProcessImageFile(file, startTime);
+            }
+        } else {
+            // Fallback for cases where file.path is not available
+            return this.fallbackProcessImageFile(file, startTime);
+        }
+    }
+
+    async fallbackProcessImageFile(file, startTime) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const processTime = performance.now() - startTime;
+                    console.log(`✅ Fallback processed ${file.name} in ${processTime.toFixed(2)}ms`);
+                    resolve({
+                        id: Date.now() + Math.random(),
+                        name: file.name,
+                        path: file.path || file.name,
+                        dataUrl: e.target.result,
+                        width: img.naturalWidth,
+                        height: img.naturalHeight,
+                        aspectRatio: img.naturalWidth / img.naturalHeight,
+                        file: file
+                    });
+                };
+                img.onerror = () => {
+                    console.log(`❌ Failed to load dragged image ${file.name}`);
+                    resolve({
+                        id: Date.now() + Math.random(),
+                        name: file.name,
+                        path: file.path || file.name,
+                        error: true,
+                        dataUrl: null
+                    });
+                };
+                img.src = e.target.result;
+            };
+
+            reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async processImageFileFromPath(filePath) {
+        const startTime = performance.now();
+        try {
+            const fileUrl = window.electronAPI.toFileUrl(filePath);
+
+            const stats = await window.electronAPI.getFileStats(filePath);
+
+            console.log(`Processing ${filePath.split(/[/\\]/).pop()}...`);
+
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+
+                img.onload = () => {
+                    const processTime = performance.now() - startTime;
+                    console.log(`✅ Loaded ${filePath.split(/[/\\]/).pop()} in ${processTime.toFixed(2)}ms`);
+                    resolve({
+                        id: this.generateUniqueId(),
+                        name: filePath.split(/[/\\]/).pop(),
+                        path: filePath,
+                        dataUrl: fileUrl,
+                        width: img.naturalWidth,
+                        height: img.naturalHeight,
+                        aspectRatio: img.naturalWidth / img.naturalHeight,
+                        size: stats.size,
+                        mtimeMs: stats.mtimeMs,
+                        mtimeISO: stats.mtimeISO
+                    });
+                };
+
+                img.onerror = () => {
+                    console.log(`❌ File URL failed for ${filePath.split(/[/\\]/).pop()}, trying blob fallback...`);
+                    // Fallback to reading the file as blob
+                    this.readFileAsBlob(filePath, stats, startTime).then(resolve).catch(reject);
+                };
+
+                // Don't set crossOrigin for file:// URLs
+                img.src = fileUrl;
+            });
+        } catch (error) {
+            console.error(`Error processing ${filePath}:`, error);
+            return {
+                id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                name: filePath.split(/[/\\]/).pop(),
+                path: filePath,
+                error: true,
+                dataUrl: null
+            };
+        }
+    }
+
+    async readFileAsBlob(filePath, stats, startTime) {
+        console.log(`📖 Reading ${filePath.split(/[/\\]/).pop()} as blob...`);
+        const buffer = await window.electronAPI.readFile(filePath);
+        const uint8Array = new Uint8Array(buffer);
+        const extension = filePath.split('.').pop().toLowerCase();
+        const mimeTypes = {
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'bmp': 'image/bmp',
+            'tiff': 'image/tiff',
+            'svg': 'image/svg+xml'
+        };
+        const mimeType = mimeTypes[extension] || 'application/octet-stream';
+        const blob = new Blob([uint8Array], { type: mimeType });
+        const dataUrl = URL.createObjectURL(blob);
+
+        // Track blob URLs for cleanup
+        this.blobUrls.push(dataUrl);
+
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                const totalTime = performance.now() - startTime;
+                console.log(`✅ Blob loaded ${filePath.split(/[/\\]/).pop()} in ${totalTime.toFixed(2)}ms`);
+                resolve({
+                    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    name: filePath.split(/[/\\]/).pop(),
+                    path: filePath,
+                    dataUrl: dataUrl,
+                    width: img.naturalWidth,
+                    height: img.naturalHeight,
+                    aspectRatio: img.naturalWidth / img.naturalHeight,
+                    size: stats.size,
+                    mtimeMs: stats.mtimeMs,
+                    mtimeISO: stats.mtimeISO
+                });
+            };
+            img.onerror = reject;
+            img.src = dataUrl;
+        });
+    }
+
+    cleanupBlobUrls() {
+        if (this.blobUrls) {
+            this.blobUrls.forEach(url => URL.revokeObjectURL(url));
+            this.blobUrls = [];
+        }
+    }
+
+    isImageFile(file) {
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg'];
+        const fileName = (file?.name || file?.path || '').toLowerCase();
+        return imageExtensions.some(ext => fileName.endsWith(ext));
+    }
+
+    renderGallery() {
+        console.log(`🔍 DEBUG: Starting gallery render for ${this.images.length} images...`);
+        const renderStart = performance.now();
+
+        // Clear existing content
+        this.galleryGrid.innerHTML = '';
+
+        // Use DocumentFragment for better performance
+        const fragment = document.createDocumentFragment();
+
+        this.images.forEach((image, index) => {
+            if (image.error) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'image-error';
+
+                const iconDiv = document.createElement('div');
+                iconDiv.className = 'image-error-icon';
+                iconDiv.textContent = '⚠️';
+
+                const messageDiv = document.createElement('div');
+                messageDiv.textContent = 'Failed to load';
+
+                const nameDiv = document.createElement('div');
+                nameDiv.style.fontSize = '0.8rem';
+                nameDiv.style.opacity = '0.7';
+                nameDiv.textContent = image.name;
+
+                errorDiv.appendChild(iconDiv);
+                errorDiv.appendChild(messageDiv);
+                errorDiv.appendChild(nameDiv);
+
+                errorDiv.addEventListener('click', () => this.openFullscreen(index));
+                fragment.appendChild(errorDiv);
+            } else {
+                const img = document.createElement('img');
+                img.className = 'gallery-image';
+                img.src = image.dataUrl;
+                img.alt = image.name;
+                img.loading = 'lazy'; // Defer loading off-screen images
+                img.decoding = 'async'; // Don't block on image decoding
+                img.addEventListener('click', () => this.openFullscreen(index));
+                fragment.appendChild(img);
+            }
+        });
+
+        this.galleryGrid.appendChild(fragment);
+        const renderTime = performance.now() - renderStart;
+        console.log(`🔍 DEBUG: Gallery render completed in ${renderTime.toFixed(2)}ms`);
+    }
+
+    openFullscreen(index) {
+        if (this.images.length === 0) return;
+
+        if (this.images[index].error) {
+            console.warn(`Cannot open fullscreen for failed image: ${this.images[index].name}`);
+            return;
+        }
+
+        this.currentIndex = index;
+        this.isFullscreen = true;
+
+        this.updateFullscreenImage();
+        this.updateNavigationButtons();
+        this.fullscreenOverlay.classList.remove('hidden');
+
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
+
+        // Add fullscreen-specific event listeners
+        this.fullscreenOverlay.onclick = (e) => {
+            if (e.target === this.fullscreenOverlay) this.closeFullscreen();
+        };
+
+        let wheelTimeout;
+        this.fullscreenWheelHandler = (e) => {
+            e.preventDefault();
+            // Debounce wheel events to prevent too rapid navigation
+            clearTimeout(wheelTimeout);
+            wheelTimeout = setTimeout(() => {
+                if (e.deltaX > 0 || e.deltaY > 0) this.showNext();
+                else if (e.deltaX < 0 || e.deltaY < 0) this.showPrevious();
+            }, 50);
+        };
+        this.fullscreenOverlay.addEventListener('wheel', this.fullscreenWheelHandler, { passive: false });
+    }
+
+    closeFullscreen() {
+        this.isFullscreen = false;
+        this.fullscreenOverlay.classList.add('hidden');
+        document.body.style.overflow = '';
+
+        // Clean up event listeners
+        this.fullscreenOverlay.onclick = null;
+        if (this.fullscreenWheelHandler) {
+            this.fullscreenOverlay.removeEventListener('wheel', this.fullscreenWheelHandler);
+            this.fullscreenWheelHandler = null;
+        }
+    }
+
+    showPrevious() {
+        if (this.currentIndex > 0) {
+            this.currentIndex--;
+            this.updateFullscreenImage();
+        }
+    }
+
+    showNext() {
+        if (this.currentIndex < this.images.length - 1) {
+            this.currentIndex++;
+            this.updateFullscreenImage();
+        }
+    }
+
+    updateFullscreenImage() {
+        const image = this.images[this.currentIndex];
+        if (!image || image.error) return;
+
+        this.fullscreenImage.src = image.dataUrl;
+        this.fullscreenImage.alt = image.name;
+        this.updateNavigationButtons();
+    }
+
+    updateNavigationButtons() {
+        this.prevBtn.disabled = this.currentIndex === 0;
+        this.nextBtn.disabled = this.currentIndex === this.images.length - 1;
+    }
+
+    handleKeydown(e) {
+        // Global shortcuts
+        if (e.ctrlKey && e.key === 'd') {
+            e.preventDefault();
+            console.log('🔍 DEBUG: Ctrl+D detected, syncing logs to main process...');
+            this.syncLogsToMain();
+            return;
+        }
+
+        if (!this.isFullscreen) return;
+
+        switch (e.key) {
+            case 'ArrowLeft':
+                e.preventDefault();
+                this.showPrevious();
+                break;
+            case 'ArrowRight':
+                e.preventDefault();
+                this.showNext();
+                break;
+            case 'Escape':
+                e.preventDefault();
+                this.closeFullscreen();
+                break;
+        }
+    }
+
+    showLoading() {
+        this.loadingIndicator.classList.remove('hidden');
+        this.loadingProgress.classList.add('hidden');
+        this.loadingText.textContent = 'Loading images...';
+    }
+
+    hideLoading() {
+        this.loadingIndicator.classList.add('hidden');
+    }
+
+    updateProgress(current, total) {
+        if (!this.loadingProgress || !this.progressFill || !this.progressText) {
+            console.warn('⚠️ Loading UI elements not found - progress cannot be displayed');
+            return;
+        }
+
+        this.loadingProgress.classList.remove('hidden');
+        const percentage = total > 0 ? (current / total) * 100 : 0;
+        this.progressFill.style.width = `${percentage}%`;
+        this.progressText.textContent = `${current} / ${total}`;
+        this.loadingText.textContent = `Loading images... (${current}/${total})`;
+    }
+
+    hideDropZone() {
+        this.dropZone.classList.add('hidden');
+        this.galleryGrid.classList.remove('hidden');
+    }
+
+    showDropZone() {
+        this.dropZone.classList.remove('hidden');
+        this.galleryGrid.classList.add('hidden');
     }
 }
 
-// Initialize the application when DOM is ready
+// Initialize the gallery when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new ImageGalleryManager();
+    new ImageGallery();
 });
 
-// Export for debugging
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = ImageGalleryManager;
-}
+// Handle window resize for responsive grid
+window.addEventListener('resize', () => {
+    // Gallery will automatically adjust via CSS grid
+    // Could add more sophisticated responsive logic here if needed
+});
