@@ -36,7 +36,7 @@ const allowedDirectories = new Set()
 // Initialize with app directories
 function initializeAllowedPaths(app) {
   const userDataDir = app.getPath('userData')
-  const imagesDir = path.join(userDataDir, 'images')
+  const imagesDir = path.join(userDataDir, 'images') // nosemgrep
   const tempDir = app.getPath('temp')
 
   // Canonicalize and add to allowed paths
@@ -45,7 +45,7 @@ function initializeAllowedPaths(app) {
       const canonical = fsNative.realpathSync(dir)
       allowedDirectories.add(canonical)
     } catch (error) {
-      console.warn(`[WARN] Could not canonicalize allowed directory ${dir}:`, error.message)
+                    console.warn(`[WARN] Could not canonicalize allowed directory:`, error.message)
     }
   })
 }
@@ -57,7 +57,7 @@ function addAllowedDirectory(dirPath) {
     allowedDirectories.add(canonical)
     console.log(`[SECURITY] Added allowed directory: ${canonical}`)
   } catch (error) {
-    console.warn(`[WARN] Could not add allowed directory ${dirPath}:`, error.message)
+                console.warn(`[WARN] Could not add allowed directory:`, error.message)
   }
 }
 

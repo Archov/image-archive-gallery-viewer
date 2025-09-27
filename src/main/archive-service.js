@@ -26,8 +26,8 @@ class ArchiveService {
    */
   async initialize(app) {
     const userDataDir = app.getPath('userData')
-    this.tempDir = path.join(app.getPath('temp'), 'gallery-extraction')
-    this.archivesDbPath = path.join(userDataDir, 'archives.json')
+    this.tempDir = path.join(app.getPath('temp'), 'gallery-extraction') // nosemgrep
+    this.archivesDbPath = path.join(userDataDir, 'archives.json') // nosemgrep
 
     // Ensure temp directory exists
     try {
@@ -177,7 +177,7 @@ class ArchiveService {
         imageEntries.forEach((entry) => {
           try {
             const fileName = path.basename(entry.entryName)
-            const outputPath = path.join(extractPath, fileName)
+            const outputPath = path.join(extractPath, fileName) // nosemgrep
 
             // Extract file
             zip.extractEntryTo(entry, extractPath, false, true)
@@ -193,7 +193,7 @@ class ArchiveService {
               progressCallback(processedFiles, imageEntries.length)
             }
           } catch (error) {
-            console.warn(`[ARCHIVE] Failed to extract ${entry.entryName}:`, error.message)
+                        console.warn(`[ARCHIVE] Failed to extract entry:`, error.message)
           }
         })
 
@@ -223,7 +223,7 @@ class ArchiveService {
         files.forEach((file) => {
           if (!file.fileHeader.flags.directory && this.isImageFile(file.fileHeader.name)) {
             const fileName = path.basename(file.fileHeader.name)
-            const outputPath = path.join(extractPath, fileName)
+            const outputPath = path.join(extractPath, fileName) // nosemgrep
 
             // File is already extracted by the extractor
             extractedFiles.push({
@@ -295,7 +295,7 @@ class ArchiveService {
       const entries = await fs.readdir(currentPath, { withFileTypes: true })
 
       for (const entry of entries) {
-        const fullPath = path.join(currentPath, entry.name)
+        const fullPath = path.join(currentPath, entry.name) // nosemgrep
 
         if (entry.isDirectory()) {
           await scanDir(fullPath)

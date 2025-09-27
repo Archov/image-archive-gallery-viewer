@@ -588,7 +588,7 @@ class ImageGallery {
         img.src = fileUrl
       })
     } catch (error) {
-      console.error(`Error processing ${filePath}:`, error)
+          console.error(`Error processing file:`, error)
       return {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: filePath.split(/[/\\]/).pop(),
@@ -733,7 +733,7 @@ class ImageGallery {
           }
         }
       } catch (error) {
-        console.error(`❌ Failed to process archive ${archiveFile.name}:`, error)
+        console.error(`❌ Failed to process archive:`, error)
         alert(`Failed to process archive ${archiveFile.name}: ${error.message}`)
       } finally {
         this.hideLoading()
@@ -788,16 +788,29 @@ class ImageGallery {
     archives.forEach((archive) => {
       const archiveItem = document.createElement('div')
       archiveItem.className = 'processed-archive-item'
-      archiveItem.innerHTML = `
-                <div class="archive-info">
-                    <strong>${archive.name}</strong>
-                    <span class="archive-meta">${archive.extractedFiles || 0} images • ${(archive.size / 1024 / 1024).toFixed(1)}MB</span>
-                </div>
-                <button class="load-archive-btn" data-hash="${archive.hash}">Load Images</button>
-            `
+
+      const archiveInfo = document.createElement('div')
+      archiveInfo.className = 'archive-info'
+
+      const nameElement = document.createElement('strong')
+      nameElement.textContent = archive.name
+
+      const metaElement = document.createElement('span')
+      metaElement.className = 'archive-meta'
+      metaElement.textContent = `${archive.extractedFiles || 0} images • ${(archive.size / 1024 / 1024).toFixed(1)}MB`
+
+      archiveInfo.appendChild(nameElement)
+      archiveInfo.appendChild(metaElement)
+
+      const loadBtn = document.createElement('button')
+      loadBtn.className = 'load-archive-btn'
+      loadBtn.textContent = 'Load Images'
+      loadBtn.setAttribute('data-hash', archive.hash)
+
+      archiveItem.appendChild(archiveInfo)
+      archiveItem.appendChild(loadBtn)
 
       // Add click handler for the load button
-      const loadBtn = archiveItem.querySelector('.load-archive-btn')
       loadBtn.addEventListener('click', () => {
         this.loadProcessedArchive(archive.hash)
       })
