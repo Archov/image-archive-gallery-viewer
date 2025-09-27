@@ -54,6 +54,13 @@ let debugLogs = [];
 const MAX_DEBUG_LOG_LINES = 5000;
 const debugLogPath = path.join(os.tmpdir(), `gallery-main-debug-${Date.now()}.txt`);
 
+// IPC sender validation for security
+function validateSender(event) {
+  // Validate that the sender is the main window's webContents
+  // This prevents unauthorized access from untrusted iframes or other web frames
+  return event.sender === mainWindow?.webContents;
+}
+
 // Override console for main process
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
@@ -238,6 +245,11 @@ ipcMain.handle('select-directory', async () => {
 });
 
 ipcMain.handle('read-file', async (event, filePath) => {
+  // SECURITY: Validate IPC sender to prevent unauthorized access
+  if (!validateSender(event)) {
+    throw new Error('Unauthorized IPC sender');
+  }
+
   try {
     const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
     console.log(`[DEBUG] IPC read-file called for: ${displayName}`);
@@ -262,6 +274,11 @@ ipcMain.handle('read-file', async (event, filePath) => {
 });
 
 ipcMain.handle('get-file-stats', async (event, filePath) => {
+  // SECURITY: Validate IPC sender to prevent unauthorized access
+  if (!validateSender(event)) {
+    throw new Error('Unauthorized IPC sender');
+  }
+
   try {
     const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
     console.log(`[DEBUG] IPC get-file-stats called for: ${displayName}`);
@@ -289,6 +306,11 @@ ipcMain.handle('get-debug-log-path', async () => {
 });
 
 ipcMain.handle('append-renderer-logs', async (event, rendererLogs) => {
+  // SECURITY: Validate IPC sender to prevent unauthorized access
+  if (!validateSender(event)) {
+    throw new Error('Unauthorized IPC sender');
+  }
+
   try {
     console.log(`[DEBUG] appendRendererLogs called with ${rendererLogs?.length || 0} logs`);
     if (Array.isArray(rendererLogs) && rendererLogs.length > 0) {
