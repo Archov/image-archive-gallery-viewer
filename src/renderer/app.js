@@ -24,6 +24,10 @@ class ImageGallery {
 
     // Set up automatic log syncing
     this.setupAutoLogSync()
+
+    // TODO: Add settings UI for configuring image repository path
+    // This will call window.electronAPI.setImageRepositoryPath()
+    // and allow users to choose where downloaded/extracted images are stored
   }
 
   generateUniqueId() {
@@ -160,7 +164,7 @@ class ImageGallery {
 
     // File selection
     this.fileSelectBtn.addEventListener('click', () => this.selectFiles())
-    this.archiveSelectBtn.addEventListener('click', () => this.selectArchives())
+    this.archiveSelectBtn?.addEventListener('click', () => this.selectArchives())
 
     // Fullscreen controls
     this.closeFullscreenBtn.addEventListener('click', () => this.closeFullscreen())
@@ -172,6 +176,20 @@ class ImageGallery {
 
     // Fullscreen image click to close
     this.fullscreenImage.addEventListener('click', () => this.closeFullscreen())
+
+    // IPC event listeners for menu actions
+    this.setupIpcListeners()
+  }
+
+  setupIpcListeners() {
+    // Menu-triggered actions
+    window.electronAPI.onMenuOpenImages(() => {
+      this.selectFiles()
+    })
+
+    window.electronAPI.onMenuOpenArchives(() => {
+      this.selectArchives()
+    })
   }
 
   setupDragAndDrop() {
@@ -614,7 +632,7 @@ class ImageGallery {
         img.src = fileUrl
       })
     } catch (error) {
-      console.error(`Error processing file:`, error)
+      console.error('Error processing file:', filePath, error)
       return {
         id: this.generateUniqueId(),
         name: filePath.split(/[/\\]/).pop(),
@@ -721,7 +739,7 @@ class ImageGallery {
         if (result.alreadyProcessed) {
           // Archive was already processed - ask user what to do
           const choice = confirm(
-            `Archive "${result.metadata.name}" has already been processed and contains ${result.extractedFiles} images.\n\n` +
+            `Archive "${result.metadata.name}" has already been processed and contains ${Array.isArray(result.extractedFiles) ? result.extractedFiles.length : Number(result.extractedFiles) || 0} images.\n\n` +
               `Choose "OK" to reprocess the archive anyway, or "Cancel" to skip.`
           )
 
@@ -826,7 +844,10 @@ class ImageGallery {
 
       const metaElement = document.createElement('span')
       metaElement.className = 'archive-meta'
-      metaElement.textContent = `${archive.extractedFiles || 0} images • ${(archive.size / 1024 / 1024).toFixed(1)}MB`
+      const imgCount = Array.isArray(archive.extractedFiles)
+        ? archive.extractedFiles.length
+        : Number(archive.extractedFiles) || 0
+      metaElement.textContent = `${imgCount} images • ${(archive.size / 1024 / 1024).toFixed(1)}MB`
 
       archiveInfo.appendChild(nameElement)
       archiveInfo.appendChild(metaElement)

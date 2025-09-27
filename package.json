@@ -33,7 +33,8 @@
     "@electron/rebuild": "^4.0.1",
     "cross-env": "^7.0.3",
     "electron": "^28.1.0",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "opengrep": "^1.0.0"
   },
   "build": {
     "appId": "com.yourname.image-gallery-manager",
@@ -43,8 +44,10 @@
     },
     "files": [
       "src/**/*",
-      "package.json",
-      "node_modules/**/*"
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/7zip-bin/**/*"
     ],
     "win": {
       "target": "nsis",
@@ -66,6 +69,7 @@
     }
   },
   "dependencies": {
+    "7zip-bin": "^5.2.0",
     "adm-zip": "^0.5.16",
     "node-7z": "^3.0.0",
     "node-unrar-js": "^2.0.2"

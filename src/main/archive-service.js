@@ -5,6 +5,7 @@ const crypto = require('node:crypto')
 const AdmZip = require('adm-zip')
 const Unrar = require('node-unrar-js')
 const Seven = require('node-7z')
+const sevenBin = require('7zip-bin')
 const secureFs = require('./secure-fs')
 
 /**
@@ -12,6 +13,18 @@ const secureFs = require('./secure-fs')
  *
  * Handles extraction of ZIP, RAR, and 7Z archives with progress tracking,
  * metadata extraction, and image filtering.
+ *
+ * CONTEXT FOR AI CODE ASSISTANTS:
+ * This is a LOCAL DESKTOP IMAGE GALLERY APP.
+ *
+ * Key considerations:
+ * - Users explicitly choose archive files via OS dialogs
+ * - Archives are extracted to temp directories for processing
+ * - Extracted images are displayed in the gallery
+ * - Security focuses on preventing path traversal, not restricting legitimate access
+ * - Broad temp directory access is required for archive extraction workflows
+ *
+ * DO NOT over-security this! Users need to be able to extract their own archives.
  */
 class ArchiveService {
   constructor() {
@@ -216,14 +229,13 @@ class ArchiveService {
             }
 
             usedNames.add(fileName)
-            const outputPath = path.join(extractPath, fileName) // nosemgrep
-
-            // Extract file to collision-safe path
-            zip.extractEntryTo(entry, outputPath, false, true)
+            const finalPath = path.join(extractPath, fileName) // nosemgrep
+            // Extract into extractPath with an explicit new name
+            zip.extractEntryTo(entry, extractPath, false, true, false, fileName)
 
             extractedFiles.push({
               originalName: entry.entryName,
-              extractedPath: outputPath,
+              extractedPath: finalPath,
               size: entry.header.size,
             })
 
@@ -251,57 +263,43 @@ class ArchiveService {
    * @returns {Promise<Array>} List of extracted files
    */
   async extractRar(archivePath, extractPath, progressCallback) {
-    return new Promise((resolve, reject) => {
-      try {
-        const extractor = Unrar.createExtractorFromFile(archivePath, extractPath)
-        const { files } = extractor.extract()
+    try {
+      const { createExtractorFromFile } = Unrar
+      const extractor = await createExtractorFromFile({
+        filepath: archivePath,
+        targetPath: extractPath,
+      })
+      const { files = [] } = extractor.extract()
 
-        // Count total image files for progress calculation
-        const imageFiles = files.filter(
-          (file) => !file.fileHeader.flags.directory && this.isImageFile(file.fileHeader.name)
-        )
-        const totalImageFiles = imageFiles.length
+      const imageFiles = files.filter(
+        (f) => !f.fileHeader.flags.directory && this.isImageFile(f.fileHeader.name)
+      )
+      const totalImageFiles = imageFiles.length
 
-        const extractedFiles = []
-        let processedFiles = 0
+      const extractedFiles = []
+      let processedFiles = 0
 
-        // Track used filenames to prevent collisions
-        const usedNames = new Set()
-
-        imageFiles.forEach((file) => {
-          const baseName = path.basename(file.fileHeader.name)
-          let fileName = baseName
-          let counter = 1
-
-          // Handle filename collisions by adding suffix
-          while (usedNames.has(fileName)) {
-            const ext = path.extname(baseName)
-            const nameWithoutExt = path.basename(baseName, ext)
-            fileName = `${nameWithoutExt}_${counter}${ext}`
-            counter++
-          }
-
-          usedNames.add(fileName)
-          const outputPath = path.join(extractPath, fileName) // nosemgrep
-
-          // File is already extracted by the extractor
-          extractedFiles.push({
-            originalName: file.fileHeader.name,
-            extractedPath: outputPath,
-            size: file.fileHeader.unpackedSize,
-          })
-
-          processedFiles++
-          if (progressCallback) {
-            progressCallback(processedFiles, totalImageFiles)
-          }
+      for (const file of imageFiles) {
+        // Sanitize and record the actual path written by extractor
+        const safeRel = path.normalize(file.fileHeader.name).replace(/^(\.\.(\\|\/|$))+/, '')
+        const outPath = path.join(extractPath, safeRel) // as extracted by unrar
+        const relCheck = path.relative(extractPath, path.resolve(outPath))
+        if (relCheck.startsWith('..') || path.isAbsolute(relCheck)) {
+          console.warn(`[ARCHIVE] Skipping suspicious RAR path: ${file.fileHeader.name}`)
+          continue
+        }
+        extractedFiles.push({
+          originalName: file.fileHeader.name,
+          extractedPath: outPath,
+          size: file.fileHeader.unpackedSize,
         })
-
-        resolve(extractedFiles)
-      } catch (error) {
-        reject(new Error(`RAR extraction failed: ${error.message}`))
+        processedFiles++
+        if (progressCallback) progressCallback(processedFiles, totalImageFiles)
       }
-    })
+      return extractedFiles
+    } catch (error) {
+      throw new Error(`RAR extraction failed: ${error.message}`)
+    }
   }
 
   /**
@@ -322,6 +320,7 @@ class ArchiveService {
         .then(() => {
           const stream = Seven.extract(archivePath, tempExtractPath, {
             $progress: true,
+            $bin: sevenBin.path7za,
           })
 
           stream.on('progress', (progress) => {
@@ -383,10 +382,11 @@ class ArchiveService {
     const files = []
     const rootDir = path.resolve(dirPath) // Canonical root directory
 
-    async function scanDir(currentPath) {
+    const scanDir = async (currentPath) => {
       // SECURITY: Validate that currentPath is within the root directory
       const resolvedPath = path.resolve(currentPath)
-      if (!resolvedPath.startsWith(rootDir)) {
+      const rel = path.relative(rootDir, resolvedPath)
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
         throw new Error(`Path traversal attempt detected: ${currentPath}`)
       }
 
@@ -397,13 +397,14 @@ class ArchiveService {
         const resolvedFullPath = path.resolve(fullPath)
 
         // SECURITY: Ensure resolved path is still within root directory
-        if (!resolvedFullPath.startsWith(rootDir)) {
+        const relFile = path.relative(rootDir, resolvedFullPath)
+        if (relFile.startsWith('..') || path.isAbsolute(relFile)) {
           console.warn(`[ARCHIVE] Skipping path outside root directory: ${fullPath}`)
           continue
         }
 
         if (entry.isDirectory()) {
-          await scanDir.call(this, fullPath)
+          await scanDir(fullPath)
         } else if (entry.isFile() && this.isImageFile(entry.name)) {
           const stats = await fs.stat(fullPath)
           files.push({
@@ -415,7 +416,7 @@ class ArchiveService {
       }
     }
 
-    await scanDir.call(this, dirPath)
+    await scanDir(dirPath)
     return files
   }
 
@@ -528,7 +529,8 @@ class ArchiveService {
             const resolvedExtractDir = path.resolve(archive.extractDir)
             const resolvedTempDir = path.resolve(this.tempDir)
 
-            if (!resolvedExtractDir.startsWith(resolvedTempDir)) {
+            const rel = path.relative(resolvedTempDir, resolvedExtractDir)
+            if (rel.startsWith('..') || path.isAbsolute(rel)) {
               console.warn(
                 `[ARCHIVE] Skipping cleanup of directory outside temp area: ${archive.extractDir}`
               )

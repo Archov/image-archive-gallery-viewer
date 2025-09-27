@@ -117,8 +117,6 @@ body {
   /* Disable dragging */
   -webkit-user-drag: none;
   -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
   user-select: none;
   /* Performance optimizations */
   -webkit-backface-visibility: hidden;
@@ -170,8 +168,6 @@ body {
   height: 100vh;
   object-fit: contain;
   background: #000;
-  /* Optimize image rendering */
-  image-rendering: optimize-contrast;
 }
 
 #close-fullscreen {
@@ -335,7 +331,7 @@ body {
 
 #processed-archives-section h3 {
   margin: 0 0 10px 0;
-  color: #007acc;
+  color: #fff;
   font-size: 16px;
 }
 

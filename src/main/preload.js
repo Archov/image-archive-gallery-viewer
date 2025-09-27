@@ -56,5 +56,15 @@ contextBridge.exposeInMainWorld(
     // Debug info
     getDebugLogPath: () => ipcRenderer.invoke('get-debug-log-path'),
     appendRendererLogs: (logs) => ipcRenderer.invoke('append-renderer-logs', logs),
+
+    // Menu event listeners
+    onMenuOpenImages: (callback) => {
+      ipcRenderer.on('menu-open-images', (_event) => callback())
+      return () => ipcRenderer.removeListener('menu-open-images', callback)
+    },
+    onMenuOpenArchives: (callback) => {
+      ipcRenderer.on('menu-open-archives', (_event) => callback())
+      return () => ipcRenderer.removeListener('menu-open-archives', callback)
+    },
   })
 )

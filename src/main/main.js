@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs').promises
 const fsNative = require('node:fs')
@@ -7,9 +7,488 @@ const { performance } = require('node:perf_hooks')
 const secureFs = require('./secure-fs')
 const archiveService = require('./archive-service')
 
+// =============================================================================
+// CRITICAL CONTEXT FOR AI CODE ASSISTANTS AND FUTURE DEVELOPERS
+// =============================================================================
+//
+// This is an IMAGE GALLERY DESKTOP APPLICATION, not a web server or network service!
+// The security model and architecture are fundamentally different from web applications.
+//
+// KEY DIFFERENCES FROM WEB APPS:
+// 1. NO NETWORK EXPOSURE - Only local file operations on user's machine
+// 2. USER INTENT - Files are explicitly chosen by users via OS file dialogs
+// 3. LOCAL TRUST - User owns their computer and files; OS provides sandboxing
+// 4. LEGITIMATE USE CASES:
+//    - Read/write temp files for archive extraction
+//    - Access user home directory for settings
+//    - Allow users to choose custom working directories (planned feature)
+//    - Process archives and images from anywhere on the system
+//
+// SECURITY PHILOSOPHY:
+// - Prevent path traversal attacks (../ manipulation, null bytes)
+// - Allow broad local file access within reason
+// - Trust user intent for file operations
+// - Focus on preventing malicious code execution, not restricting legitimate use
+//
+// DO NOT apply web-application security patterns!
+// Overly restrictive file access breaks core functionality.
+// The cure should never be worse than the disease.
+//
+// This app exists to let users look at pictures. That's it.
+// Security measures should not prevent users from using their own damn files.
+// =============================================================================
+
+// Application Menu
+function createApplicationMenu() {
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Open Images...',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.send('menu-open-images')
+            }
+          },
+        },
+        {
+          label: 'Open Archives...',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.send('menu-open-archives')
+            }
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Settings...',
+          accelerator: 'CmdOrCtrl+,',
+          click: async () => {
+            await openSettingsDialog()
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Quit',
+          accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+          click: () => {
+            app.quit()
+          },
+        },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectall' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forcereload' },
+        { role: 'toggledevtools' },
+        { type: 'separator' },
+        { role: 'resetzoom' },
+        { role: 'zoomin' },
+        { role: 'zoomout' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [{ role: 'minimize' }, { role: 'close' }],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About Image Gallery',
+          click: () => {
+            dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: 'About Image Gallery',
+              message: 'Image Gallery Manager',
+              detail: `Version ${app.getVersion()}\n\nA comprehensive desktop image gallery management system with rich metadata, tagging, and browser integration.`,
+            })
+          },
+        },
+      ],
+    },
+  ]
+
+  // macOS specific adjustments
+  if (process.platform === 'darwin') {
+    template.unshift({
+      label: app.getName(),
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services', submenu: [] },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideothers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    })
+
+    // Window menu adjustments for macOS
+    template[4].submenu = [
+      { role: 'close' },
+      { role: 'minimize' },
+      { role: 'zoom' },
+      { type: 'separator' },
+      { role: 'front' },
+    ]
+  }
+
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
+}
+
+// Settings dialog handler
+async function openSettingsDialog() {
+  if (!mainWindow) return
+
+  const config = { ...appConfig }
+
+  // Show current configuration
+  const infoResult = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Image Gallery Settings',
+    message: 'Current Configuration',
+    detail: `Image Repository: ${config.imageRepositoryPath || 'Not set'}\n\nMax File Size: ${config.maxFileSizeMB}MB`,
+    buttons: ['Change Repository', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+  })
+
+  if (infoResult.response === 0) {
+    // User wants to change repository - open directory picker
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Image Repository Directory',
+      properties: ['openDirectory', 'createDirectory'],
+      message: 'Choose where to store your extracted images and archives',
+    })
+
+    if (!result.canceled && result.filePaths.length > 0) {
+      const selectedPath = result.filePaths[0]
+
+      // Check if we have existing processed archives that need migration
+      const existingArchives = await checkForExistingArchives()
+
+      // Check if we need to migrate from an existing repository or from temp
+      const oldRepositoryPath = config.imageRepositoryPath
+
+      // Check if any archives are still in temp directories (need migration)
+      const hasTempArchives = existingArchives.some((archive) =>
+        archive.extractDir?.startsWith(path.join(app.getPath('temp'), 'gallery-extraction'))
+      )
+
+      const needsMigration =
+        (oldRepositoryPath &&
+          oldRepositoryPath !== selectedPath &&
+          !selectedPath.startsWith(oldRepositoryPath + path.sep)) ||
+        hasTempArchives
+
+      let shouldMigrate = false
+
+      if (needsMigration) {
+        // Confirm migration with user
+        const migrationResult = await dialog.showMessageBox(mainWindow, {
+          type: 'question',
+          title: 'Migrate Existing Content?',
+          message: 'Repository Location Changed',
+          detail: hasTempArchives
+            ? `You have ${existingArchives.length} processed archive(s) stored in temporary directories.\n\nWould you like to copy all existing images and archives to the new repository location?`
+            : `You have an existing repository at:\n${oldRepositoryPath}\n\nWould you like to copy all existing images and archives to the new location?`,
+          buttons: ['Migrate Content', 'Start Fresh', 'Cancel'],
+          defaultId: 0,
+          cancelId: 2,
+        })
+
+        if (migrationResult.response === 2) {
+          // User canceled
+          return
+        }
+
+        shouldMigrate = migrationResult.response === 0
+
+        if (shouldMigrate) {
+          // Show migration progress
+          await dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Migration Starting',
+            message: 'Content Migration',
+            detail:
+              'Please wait while your existing content is migrated to the new repository location...',
+          })
+
+          // Perform migration
+          const migrationSource = hasTempArchives ? null : oldRepositoryPath
+          const migrationSuccess = await migrateRepositoryContent(
+            migrationSource,
+            selectedPath,
+            existingArchives
+          )
+          if (!migrationSuccess) {
+            // Migration failed, ask user what to do
+            const failureResult = await dialog.showMessageBox(mainWindow, {
+              type: 'error',
+              title: 'Migration Failed',
+              message: 'Content Migration Error',
+              detail:
+                'Failed to migrate existing content to the new repository location. You can try again later or continue with the empty repository.',
+              buttons: ['Continue Anyway', 'Cancel'],
+              defaultId: 0,
+              cancelId: 1,
+            })
+
+            if (failureResult.response === 1) {
+              // User canceled due to migration failure
+              return
+            }
+          }
+        }
+      }
+
+      // Update config with new path
+      appConfig.imageRepositoryPath = selectedPath
+
+      // Save to config file
+      try {
+        const userDataDir = app.getPath('userData')
+        const configPath = path.join(userDataDir, 'config.json')
+        await fs.writeFile(configPath, JSON.stringify(appConfig, null, 2))
+        console.log('[CONFIG] Saved image repository path:', selectedPath)
+
+        // Update secure-fs with the new allowed directory
+        secureFs.addAllowedDirectory(selectedPath)
+
+        // Show success message
+        const successMessage = needsMigration
+          ? `Repository location updated successfully.\n\n${shouldMigrate ? 'Existing content has been migrated.' : 'Starting with empty repository.'}`
+          : 'Repository location updated successfully.'
+
+        dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'Settings Updated',
+          message: 'Repository Location Changed',
+          detail: `New location: ${selectedPath}\n\n${successMessage}\n\nThe app will use this location for storing downloaded and extracted images.`,
+        })
+      } catch (error) {
+        console.error('[CONFIG] Failed to save config:', error)
+        dialog.showErrorBox('Settings Error', `Failed to save configuration: ${error.message}`)
+      }
+    }
+  }
+}
+
+// Repository content migration
+async function migrateRepositoryContent(oldPath, newPath, existingArchives = null) {
+  try {
+    console.log('[MIGRATION] Starting repository migration')
+    console.log(`[MIGRATION] From: ${oldPath}`)
+    console.log(`[MIGRATION] To: ${newPath}`)
+
+    // Create new directory if it doesn't exist
+    await fs.mkdir(newPath, { recursive: true })
+
+    if (oldPath) {
+      // Traditional migration from old repository path
+      let oldStats
+      try {
+        oldStats = await fs.stat(oldPath)
+      } catch (_error) {
+        console.log('[MIGRATION] Old repository path does not exist or is not accessible')
+        return true // Not an error, just nothing to migrate
+      }
+
+      if (!oldStats.isDirectory()) {
+        console.log('[MIGRATION] Old repository path is not a directory')
+        return true
+      }
+
+      // Get list of items to migrate
+      const items = await fs.readdir(oldPath)
+      if (items.length === 0) {
+        console.log('[MIGRATION] Old repository is empty, nothing to migrate')
+        return true
+      }
+
+      console.log(`[MIGRATION] Found ${items.length} items to migrate from ${oldPath}`)
+
+      // Copy each item recursively
+      for (const item of items) {
+        const oldItemPath = path.join(oldPath, item)
+        const newItemPath = path.join(newPath, item)
+
+        try {
+          await copyDirectoryRecursive(oldItemPath, newItemPath)
+          console.log(`[MIGRATION] Migrated: ${item}`)
+        } catch (error) {
+          console.error('[MIGRATION] Failed to migrate:', item, error.message)
+          // Continue with other items rather than failing completely
+        }
+      }
+    } else {
+      // Migration from temp directories based on processed archives
+      if (!existingArchives || existingArchives.length === 0) {
+        console.log('[MIGRATION] No archives to migrate from temp directories')
+        return true
+      }
+
+      console.log(`[MIGRATION] Migrating ${existingArchives.length} archives from temp directories`)
+
+      // Migrate each archive's extract directory
+      for (const archive of existingArchives) {
+        if (archive.extractDir) {
+          try {
+            // Create archive-specific subdirectory in new repository
+            const archiveName = archive.name.replace(/[^a-zA-Z0-9]/g, '_')
+            const newArchiveDir = path.join(newPath, archiveName)
+
+            // Copy the entire extract directory
+            await copyDirectoryRecursive(archive.extractDir, newArchiveDir)
+            console.log(`[MIGRATION] Migrated archive: ${archive.name}`)
+
+            // Update the archive's extractDir path for database
+            archive.extractDir = newArchiveDir
+          } catch (error) {
+            console.error('[MIGRATION] Failed to migrate archive:', archive.name, error.message)
+            // Continue with other archives
+          }
+        }
+      }
+    }
+
+    // Update processed archives database with new paths
+    await updateProcessedArchivesPaths(oldPath, newPath, existingArchives)
+
+    console.log('[MIGRATION] Repository migration completed successfully')
+    return true
+  } catch (error) {
+    console.error('[MIGRATION] Repository migration failed:', error)
+    return false
+  }
+}
+
+// Recursively copy directory contents
+async function copyDirectoryRecursive(src, dest) {
+  const stats = await fs.stat(src)
+
+  if (stats.isDirectory()) {
+    await fs.mkdir(dest, { recursive: true })
+    const items = await fs.readdir(src)
+
+    for (const item of items) {
+      const srcPath = path.join(src, item)
+      const destPath = path.join(dest, item)
+      await copyDirectoryRecursive(srcPath, destPath)
+    }
+  } else {
+    // Copy file
+    await fs.copyFile(src, dest)
+  }
+}
+
+// Update processed archives database with new paths
+async function updateProcessedArchivesPaths(oldPath, newPath, existingArchives = null) {
+  try {
+    // Load the database directly
+    const db = await archiveService.loadArchivesDb()
+
+    if (oldPath) {
+      // Traditional migration - update paths in database
+      for (const [hash, archive] of Object.entries(db.archives)) {
+        let needsUpdate = false
+        const updatedArchive = { ...archive }
+
+        // Update extractDir if it was in the old repository
+        if (archive.extractDir?.startsWith(oldPath)) {
+          updatedArchive.extractDir = archive.extractDir.replace(oldPath, newPath)
+          needsUpdate = true
+        }
+
+        // Update extractedFiles paths
+        if (archive.extractedFiles && Array.isArray(archive.extractedFiles)) {
+          updatedArchive.extractedFiles = archive.extractedFiles.map((file) => {
+            if (file.extractedPath?.startsWith(oldPath)) {
+              return {
+                ...file,
+                extractedPath: file.extractedPath.replace(oldPath, newPath),
+              }
+            }
+            return file
+          })
+          needsUpdate = true
+        }
+
+        // Update the database if needed
+        if (needsUpdate) {
+          db.archives[hash] = updatedArchive
+          console.log(`[MIGRATION] Updated paths for archive: ${archive.name}`)
+        }
+      }
+    } else if (existingArchives) {
+      // Temp directory migration - update with new paths from migration
+      for (const migratedArchive of existingArchives) {
+        const hash = migratedArchive.hash
+        if (db.archives[hash] && migratedArchive.extractDir) {
+          // Update the extractDir in the database
+          db.archives[hash] = {
+            ...db.archives[hash],
+            extractDir: migratedArchive.extractDir,
+          }
+
+          // Update extractedFiles paths if they exist
+          if (db.archives[hash].extractedFiles && Array.isArray(db.archives[hash].extractedFiles)) {
+            const oldExtractDir = db.archives[hash].extractedFiles[0]?.extractedPath
+              ?.split(path.sep)
+              .slice(0, -1)
+              .join(path.sep)
+            if (oldExtractDir) {
+              db.archives[hash].extractedFiles = db.archives[hash].extractedFiles.map((file) => ({
+                ...file,
+                extractedPath: file.extractedPath.replace(
+                  oldExtractDir,
+                  migratedArchive.extractDir
+                ),
+              }))
+            }
+          }
+
+          console.log(`[MIGRATION] Updated database for archive: ${db.archives[hash].name}`)
+        }
+      }
+    }
+
+    // Save the updated database
+    await archiveService.saveArchivesDb(db)
+    console.log('[MIGRATION] Processed archives database updated')
+  } catch (error) {
+    console.error('[MIGRATION] Failed to update processed archives database:', error)
+    // Don't fail the migration for this - the files are copied, just the DB refs are wrong
+  }
+}
+
 // App configuration
 let appConfig = {
   maxFileSizeMB: 50, // Default 50MB limit for individual files
+  imageRepositoryPath: null, // User-specified path for storing images/archives
 }
 
 // Load app configuration from user data directory
@@ -42,6 +521,19 @@ async function loadAppConfig() {
       mergedConfig.maxFileSizeMB = defaults.maxFileSizeMB
     } else {
       mergedConfig.maxFileSizeMB = parsedMaxSize
+    }
+
+    // Validate and sanitize imageRepositoryPath
+    if (mergedConfig.imageRepositoryPath) {
+      const repoPath = String(mergedConfig.imageRepositoryPath).trim()
+      if (repoPath) {
+        // Basic validation - ensure it's an absolute path
+        const resolvedPath = path.resolve(repoPath)
+        mergedConfig.imageRepositoryPath = resolvedPath
+        console.log('[CONFIG] Image repository path set to:', resolvedPath)
+      } else {
+        mergedConfig.imageRepositoryPath = null
+      }
     }
 
     appConfig = mergedConfig
@@ -184,31 +676,43 @@ function createWindow() {
   })
 }
 
+// Check for existing processed archives
+async function checkForExistingArchives() {
+  try {
+    const archives = await archiveService.getProcessedArchives()
+    return archives || []
+  } catch (error) {
+    console.error('[SETTINGS] Failed to check for existing archives:', error)
+    return []
+  }
+}
+
 // App event handlers
 app.whenReady().then(async () => {
-  // Initialize secure file system with allowed paths
-  secureFs.initializeAllowedPaths(app)
-
-  // Initialize archive service
+  // Initialize archive service first (needs temp paths)
   await archiveService.initialize(app)
 
-  // Load app configuration first
+  // Load app configuration
   await loadAppConfig()
+
+  // Initialize secure file system with allowed paths (now that config is loaded)
+  secureFs.initializeAllowedPaths(app, appConfig.imageRepositoryPath)
 
   // Create data directories
   const userDataDir = app.getPath('userData')
   const imagesDir = path.join(userDataDir, 'images')
-  const tempDir = path.join(app.getPath('temp'), 'image-archive-viewer')
 
   try {
     await fs.mkdir(imagesDir, { recursive: true })
-    await fs.mkdir(tempDir, { recursive: true })
   } catch (error) {
     console.error('Failed to create data directories:', error)
   }
 
   // Then create the window
   createWindow()
+
+  // Create application menu
+  createApplicationMenu()
 })
 
 app.on('window-all-closed', () => {
@@ -353,6 +857,51 @@ ipcMain.handle('get-debug-log-path', async () => {
   return debugLogPath
 })
 
+ipcMain.handle('get-app-config', async () => {
+  console.log('[CONFIG] Returning app config')
+  return { ...appConfig }
+})
+
+ipcMain.handle('set-image-repository-path', async (event) => {
+  // SECURITY: Validate IPC sender
+  if (!validateSender(event)) {
+    throw new Error('Unauthorized IPC sender')
+  }
+
+  console.log('[CONFIG] Opening directory selection for image repository')
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Image Repository Directory',
+    properties: ['openDirectory', 'createDirectory'],
+    message: 'Choose where to store your extracted images and archives',
+  })
+
+  if (!result.canceled && result.filePaths.length > 0) {
+    const selectedPath = result.filePaths[0]
+
+    // Update config
+    appConfig.imageRepositoryPath = selectedPath
+
+    // Save to config file
+    try {
+      const userDataDir = app.getPath('userData')
+      const configPath = path.join(userDataDir, 'config.json')
+      await fs.writeFile(configPath, JSON.stringify(appConfig, null, 2))
+      console.log('[CONFIG] Saved image repository path:', selectedPath)
+
+      // Update secure-fs with the new allowed directory
+      secureFs.addAllowedDirectory(selectedPath)
+
+      return { success: true, path: selectedPath }
+    } catch (error) {
+      console.error('[CONFIG] Failed to save config:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  return { success: false, canceled: true }
+})
+
 ipcMain.handle('append-renderer-logs', async (event, rendererLogs) => {
   // SECURITY: Validate IPC sender to prevent unauthorized access
   if (!validateSender(event)) {
@@ -426,8 +975,17 @@ ipcMain.handle('process-archive', async (event, archivePath, forceReprocess = fa
     )
     const startTime = performance.now()
 
+    // SECURITY: Validate archive path before processing
+    //
+    // CONTEXT FOR AI CODE ASSISTANTS:
+    // This is a LOCAL DESKTOP APP, not a web server!
+    // Users explicitly choose archive files via OS file dialogs.
+    // Path validation prevents traversal attacks but allows legitimate access.
+    // DO NOT over-restrict - users should be able to process archives from anywhere on their system.
+    //
+    const validatedArchivePath = secureFs.validateFilePath(archivePath)
     const result = await archiveService.processArchive(
-      archivePath,
+      validatedArchivePath,
       (processed, total) => {
         // Send progress updates to renderer
         if (!event.sender.isDestroyed()) {
