@@ -14,11 +14,16 @@ function validateFilePath(filePath) {
     throw new Error('Invalid file path');
   }
 
-  // Sanitize input: normalize path separators and remove null bytes
-  const sanitizedPath = filePath.replace(/\0/g, '').replace(/[/\\]+/g, path.sep);
+  // Sanitize input: strip null bytes only (preserve UNC paths)
+  const sanitizedPath = filePath.replace(/\0/g, '');
+
+  // Normalize path to handle relative components and separators properly
+  const normalizedPath = process.platform === 'win32'
+    ? path.win32.normalize(sanitizedPath)
+    : path.normalize(sanitizedPath);
 
   // Resolve to absolute path to prevent directory traversal
-  const absolutePath = path.resolve(sanitizedPath);
+  const absolutePath = path.resolve(normalizedPath);
 
   // Resolve symlinks to canonical path to prevent symlink escapes
   let canonicalPath;
