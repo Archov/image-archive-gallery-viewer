@@ -45,7 +45,7 @@ function initializeAllowedPaths(app) {
       const canonical = fsNative.realpathSync(dir)
       allowedDirectories.add(canonical)
     } catch (error) {
-                    console.warn(`[WARN] Could not canonicalize allowed directory:`, error.message)
+      console.warn(`[WARN] Could not canonicalize allowed directory:`, error.message)
     }
   })
 }
@@ -57,7 +57,7 @@ function addAllowedDirectory(dirPath) {
     allowedDirectories.add(canonical)
     console.log(`[SECURITY] Added allowed directory: ${canonical}`)
   } catch (error) {
-                console.warn(`[WARN] Could not add allowed directory:`, error.message)
+    console.warn(`[WARN] Could not add allowed directory:`, error.message)
   }
 }
 
