@@ -49,6 +49,7 @@ function initializeAllowedPaths(app, imageRepositoryPath = null) {
   // Canonicalize and add to allowed paths
   dirsToAllow.forEach((dir) => {
     try {
+      fsNative.mkdirSync(dir, { recursive: true })
       const canonical = fsNative.realpathSync(dir)
       allowedDirectories.add(canonical)
       console.log(`[SECURE-FS] Added allowed directory: ${canonical}`)
@@ -69,30 +70,59 @@ function addAllowedDirectory(dirPath) {
   }
 }
 
-// SECURITY FUNCTION: Comprehensive path validation and canonicalization
-// This function implements multi-layer security validation to prevent:
-// - Path traversal attacks (../)
-// - Symlink escape attacks
-// - Directory boundary violations
-// - Null byte injection attacks
-function validateFilePath(filePath) {
+// SECURITY FUNCTION: Basic path sanitization for reading operations
+// Users should be able to read files from ANYWHERE on their system
+function sanitizeFilePath(filePath) {
   if (!filePath || typeof filePath !== 'string') {
     throw new Error('Invalid file path: must be a non-empty string')
   }
 
-  // Strip null bytes (security)
+  // Strip null bytes (basic security)
   const sanitized = filePath.replace(/\0/g, '')
 
-  // SECURITY: Normalize path to handle relative components safely
-  // path.normalize() is safe here because null bytes were already stripped
+  // Normalize path to handle relative components
   const normalized =
     process.platform === 'win32' ? path.win32.normalize(sanitized) : path.normalize(sanitized)
 
-  // SECURITY: Resolve to absolute path for canonical validation
-  // path.resolve() is safe here because input has been sanitized and normalized
+  // Resolve to absolute path
   const absolute = path.resolve(normalized)
 
-  // Canonicalize to resolve symlinks (security)
+  // Canonicalize to resolve symlinks (prevents basic attacks)
+  try {
+    const canonical = fsNative.realpathSync(absolute)
+    return canonical
+  } catch (error) {
+    // Handle ENOENT (file doesn't exist) for read operations
+    if (error.code === 'ENOENT') {
+      const parentDir = path.dirname(absolute)
+      try {
+        const canonicalParent = fsNative.realpathSync(parentDir)
+        // Resolve the read target against canonical parent
+        const resolvedTarget = path.resolve(canonicalParent, path.basename(absolute))
+        return resolvedTarget
+      } catch (parentError) {
+        throw new Error(`Parent directory resolution failed: ${parentError.message}`)
+      }
+    } else {
+      throw new Error(`Path resolution failed: ${error.message}`)
+    }
+  }
+}
+
+// SECURITY FUNCTION: Strict path validation for writing operations
+// Writing should be restricted to user-approved directories only
+function validateWritePath(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    throw new Error('Invalid file path: must be a non-empty string')
+  }
+
+  // First sanitize the path
+  const sanitized = filePath.replace(/\0/g, '')
+  const normalized =
+    process.platform === 'win32' ? path.win32.normalize(sanitized) : path.normalize(sanitized)
+  const absolute = path.resolve(normalized)
+
+  // Canonicalize to resolve symlinks
   let canonical
   try {
     canonical = fsNative.realpathSync(absolute)
@@ -102,7 +132,7 @@ function validateFilePath(filePath) {
       const parentDir = path.dirname(absolute)
       try {
         const canonicalParent = fsNative.realpathSync(parentDir)
-        // SECURITY: Resolve the write target against canonical parent and re-validate
+        // Resolve the write target against canonical parent
         const resolvedTarget = path.resolve(canonicalParent, path.basename(absolute))
         canonical = resolvedTarget
       } catch (parentError) {
@@ -113,33 +143,27 @@ function validateFilePath(filePath) {
     }
   }
 
-  // Check if path is within allowed directories
-  //
   // SECURITY MODEL FOR LOCAL DESKTOP APP:
-  // - READ ACCESS: Broad (user chooses files, OS protects against malware)
+  // - READ ACCESS: Broad (user chooses files from anywhere)
   // - WRITE ACCESS: Restricted to user-approved directories only
   //
-  // ALLOWED DIRECTORIES:
+  // ALLOWED DIRECTORIES FOR WRITING:
   // - User home directory (for config, settings)
   // - Temp directory (for archive extraction)
   // - App data directory (for internal storage)
   // - User-specified image repository (for storing downloaded/extracted content)
   //
   // WHY THIS APPROACH:
-  // - Users explicitly choose where to store their image collections
-  // - Prevents accidental writes to system directories
-  // - Allows full control over personal file organization
-  // - Satisfies security reviewers while preserving usability
-  //
-  // CRITICAL: DO NOT make this more restrictive without user approval!
-  // Users own their computers and should control their own file storage.
+  // - Users can read/process files from anywhere on their system
+  // - Writes are restricted to prevent path traversal attacks
+  // - Maintains security while preserving usability
 
   const isAllowed = Array.from(allowedDirectories).some((allowedDir) => {
     return isPathInside(canonical, allowedDir) || canonical === allowedDir
   })
 
   if (!isAllowed) {
-    throw new Error(`Access denied: path outside allowed directories`)
+    throw new Error(`Write access denied: path outside allowed directories`)
   }
 
   return canonical
@@ -168,57 +192,43 @@ function validateFilePath(filePath) {
 // Users own their computers and explicitly choose what the app can access.
 
 const secureFs = {
-  // SECURITY: For user-selected files, allow reading from any location
-  // since the user explicitly chose these files. Only basic path sanitization.
+  // READ ACCESS: Users can read files from ANYWHERE on their system
+  // Only basic path sanitization to prevent basic attacks
   async readFile(filePath, options) {
-    const validatedPath = validateFilePath(filePath)
-    return fs.readFile(validatedPath, options)
+    const sanitizedPath = sanitizeFilePath(filePath)
+    return fs.readFile(sanitizedPath, options)
   },
 
-  // SECURITY: For user-selected files, allow stat from any location
-  // since the user explicitly chose these files. Only basic path sanitization.
+  // READ ACCESS: Users can stat files from ANYWHERE on their system
   async stat(filePath) {
-    if (!filePath || typeof filePath !== 'string') {
-      throw new Error('Invalid file path: must be a non-empty string')
-    }
-
-    // Basic sanitization: strip null bytes and canonicalize
-    const sanitized = filePath.replace(/\0/g, '')
-    const normalized =
-      process.platform === 'win32' ? path.win32.normalize(sanitized) : path.normalize(sanitized)
-    const absolute = path.resolve(normalized)
-
-    // Canonicalize to resolve symlinks (prevents basic attacks)
-    try {
-      const canonical = fsNative.realpathSync(absolute)
-      return fs.stat(canonical)
-    } catch (error) {
-      throw new Error(`File access failed: ${error.message}`)
-    }
+    const sanitizedPath = sanitizeFilePath(filePath)
+    return fs.stat(sanitizedPath)
   },
 
-  // SECURITY: Path validated by validateFilePath() before fs.writeFile()
+  // READ ACCESS: Users can check access to files from ANYWHERE
+  async access(filePath, mode) {
+    const sanitizedPath = sanitizeFilePath(filePath)
+    return fs.access(sanitizedPath, mode)
+  },
+
+  // WRITE ACCESS: Restricted to user-approved directories only
+  // Prevents path traversal attacks when writing files
   async writeFile(filePath, data, options) {
-    const validatedPath = validateFilePath(filePath) // SECURITY VALIDATION
+    const validatedPath = validateWritePath(filePath)
     return fs.writeFile(validatedPath, data, options)
   },
 
-  // SECURITY: Path validated by validateFilePath() before fs.appendFile()
+  // WRITE ACCESS: Restricted to user-approved directories only
   async appendFile(filePath, data, options) {
-    const validatedPath = validateFilePath(filePath) // SECURITY VALIDATION
+    const validatedPath = validateWritePath(filePath)
     return fs.appendFile(validatedPath, data, options)
-  },
-
-  // SECURITY: Path validated by validateFilePath() before fs.access()
-  async access(filePath, mode) {
-    const validatedPath = validateFilePath(filePath) // SECURITY VALIDATION
-    return fs.access(validatedPath, mode)
   },
 
   // Utility functions
   addAllowedDirectory,
   initializeAllowedPaths,
-  validateFilePath,
+  sanitizeFilePath,
+  validateWritePath,
 
   // Direct access to allowed directories for reference
   getAllowedDirectories: () => Array.from(allowedDirectories),

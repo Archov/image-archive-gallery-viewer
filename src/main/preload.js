@@ -59,12 +59,14 @@ contextBridge.exposeInMainWorld(
 
     // Menu event listeners
     onMenuOpenImages: (callback) => {
-      ipcRenderer.on('menu-open-images', (_event) => callback())
-      return () => ipcRenderer.removeListener('menu-open-images', callback)
+      const handler = (_event) => callback()
+      ipcRenderer.on('menu-open-images', handler)
+      return () => ipcRenderer.removeListener('menu-open-images', handler)
     },
     onMenuOpenArchives: (callback) => {
-      ipcRenderer.on('menu-open-archives', (_event) => callback())
-      return () => ipcRenderer.removeListener('menu-open-archives', callback)
+      const handler = (_event) => callback()
+      ipcRenderer.on('menu-open-archives', handler)
+      return () => ipcRenderer.removeListener('menu-open-archives', handler)
     },
   })
 )

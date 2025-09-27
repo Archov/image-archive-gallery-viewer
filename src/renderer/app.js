@@ -763,8 +763,11 @@ class ImageGallery {
             }
           } else {
             // User chose to skip - show message about previously processed archive
+            const prevCount = Array.isArray(result.extractedFiles)
+              ? result.extractedFiles.length
+              : Number(result.extractedFiles) || 0
             alert(
-              `Archive "${result.metadata.name}" was previously processed (${result.extractedFiles} images). Skipping.`
+              `Archive "${result.metadata.name}" was previously processed (${prevCount} images). Skipping.`
             )
           }
         } else {

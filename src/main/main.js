@@ -792,10 +792,11 @@ ipcMain.handle('read-file', async (event, filePath) => {
     console.log(`[DEBUG] IPC read-file called for: ${displayName}`)
     const startTime = performance.now()
 
-    // SECURITY: Ensure path is within allowed directories (set via dialogs/init)
-    const validatedPath = secureFs.validateFilePath(filePath)
+    // SECURITY: Basic path sanitization for reading (permissive)
+    // Users can read files from ANYWHERE on their system
+    const sanitizedPath = secureFs.sanitizeFilePath(filePath)
     // Get file stats first for size check
-    const stats = await secureFs.stat(validatedPath)
+    const stats = await secureFs.stat(sanitizedPath)
     const maxFileSizeBytes = appConfig.maxFileSizeMB * 1024 * 1024
     if (stats.size > maxFileSizeBytes) {
       throw new Error(
@@ -804,7 +805,7 @@ ipcMain.handle('read-file', async (event, filePath) => {
     }
 
     // Read file (after validation)
-    const buffer = await secureFs.readFile(validatedPath)
+    const buffer = await secureFs.readFile(sanitizedPath)
     // TOCTOU: ensure file didn't grow beyond limit after read
     if (buffer.length > maxFileSizeBytes) {
       throw new Error(
@@ -833,9 +834,10 @@ ipcMain.handle('get-file-stats', async (event, filePath) => {
     console.log(`[DEBUG] IPC get-file-stats called for: ${displayName}`)
     const startTime = performance.now()
 
-    // SECURITY: Ensure path is within allowed directories
-    const validatedPath = secureFs.validateFilePath(filePath)
-    const stats = await secureFs.stat(validatedPath)
+    // SECURITY: Basic path sanitization for reading operations
+    // Users can get stats for files from anywhere on their system
+    const sanitizedPath = path.resolve(filePath)
+    const stats = await secureFs.stat(sanitizedPath)
     const statTime = performance.now() - startTime
     console.log(
       `[DEBUG] File stats completed in ${statTime.toFixed(2)}ms, size: ${(stats.size / 1024).toFixed(2)}KB`
@@ -975,17 +977,17 @@ ipcMain.handle('process-archive', async (event, archivePath, forceReprocess = fa
     )
     const startTime = performance.now()
 
-    // SECURITY: Validate archive path before processing
-    //
-    // CONTEXT FOR AI CODE ASSISTANTS:
-    // This is a LOCAL DESKTOP APP, not a web server!
-    // Users explicitly choose archive files via OS file dialogs.
-    // Path validation prevents traversal attacks but allows legitimate access.
-    // DO NOT over-restrict - users should be able to process archives from anywhere on their system.
-    //
-    const validatedArchivePath = secureFs.validateFilePath(archivePath)
+    // SECURITY: Basic path sanitization for reading
+    // Users can process archives from ANYWHERE on their system
+    // No directory restrictions for reading operations
+    const sanitizedArchivePath = path.resolve(archivePath)
+    // Get current repository path for extraction
+    const repositoryPath =
+      appConfig.imageRepositoryPath || path.join(app.getPath('userData'), 'images')
+
     const result = await archiveService.processArchive(
-      validatedArchivePath,
+      sanitizedArchivePath,
+      repositoryPath,
       (processed, total) => {
         // Send progress updates to renderer
         if (!event.sender.isDestroyed()) {

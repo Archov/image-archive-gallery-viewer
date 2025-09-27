@@ -269,9 +269,11 @@ class ArchiveService {
         filepath: archivePath,
         targetPath: extractPath,
       })
-      const { files = [] } = extractor.extract()
+      const extractionResult = extractor.extract()
+      const filesIterator = extractionResult.files ?? []
+      const entries = Array.from(filesIterator)
 
-      const imageFiles = files.filter(
+      const imageFiles = entries.filter(
         (f) => !f.fileHeader.flags.directory && this.isImageFile(f.fileHeader.name)
       )
       const totalImageFiles = imageFiles.length
@@ -311,65 +313,33 @@ class ArchiveService {
    */
   async extract7z(archivePath, extractPath, progressCallback) {
     return new Promise((resolve, reject) => {
-      // SECURITY: Extract to temporary directory first to avoid extracting potentially dangerous files
-      const tempExtractPath = path.join(
-        this.tempDir,
-        `temp_7z_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
-      )
-      fs.mkdir(tempExtractPath, { recursive: true })
-        .then(() => {
-          const stream = Seven.extract(archivePath, tempExtractPath, {
-            $progress: true,
-            $bin: sevenBin.path7za,
-          })
+      const stream = Seven.extract(archivePath, extractPath, {
+        $progress: true,
+        $bin: sevenBin.path7za,
+      })
 
-          stream.on('progress', (progress) => {
-            if (progressCallback) {
-              // Convert percentage to integer count for consistent API
-              const processedCount = Math.floor((progress.percent / 100) * 100) // Estimate based on percentage
-              progressCallback(processedCount, 100)
-            }
-          })
+      stream.on('progress', (progress) => {
+        if (progressCallback) {
+          // Convert percentage to integer count for consistent API
+          const processedCount = Math.floor((progress.percent / 100) * 100) // Estimate based on percentage
+          progressCallback(processedCount, 100)
+        }
+      })
 
-          stream.on('end', async () => {
-            try {
-              // Scan extracted directory for image files only
-              const allFiles = await this.scanDirectoryForImages(tempExtractPath)
+      stream.on('end', async () => {
+        try {
+          // Scan extracted directory for image files only
+          const allFiles = await this.scanDirectoryForImages(extractPath)
 
-              // Move only image files to the final extraction directory
-              const extractedFiles = []
-              for (const file of allFiles) {
-                const finalPath = path.join(
-                  extractPath,
-                  path.relative(tempExtractPath, file.extractedPath)
-                )
-                await fs.mkdir(path.dirname(finalPath), { recursive: true })
-                await fs.rename(file.extractedPath, finalPath)
+          resolve(allFiles)
+        } catch (error) {
+          reject(new Error(`7Z processing failed: ${error.message}`))
+        }
+      })
 
-                extractedFiles.push({
-                  ...file,
-                  extractedPath: finalPath,
-                })
-              }
-
-              // Clean up temp directory
-              await fs.rm(tempExtractPath, { recursive: true, force: true })
-
-              resolve(extractedFiles)
-            } catch (error) {
-              // Clean up on error
-              fs.rm(tempExtractPath, { recursive: true, force: true }).catch(() => {})
-              reject(new Error(`7Z processing failed: ${error.message}`))
-            }
-          })
-
-          stream.on('error', async (error) => {
-            // Clean up temp directory on error
-            fs.rm(tempExtractPath, { recursive: true, force: true }).catch(() => {})
-            reject(new Error(`7Z extraction failed: ${error.message}`))
-          })
-        })
-        .catch(reject)
+      stream.on('error', (error) => {
+        reject(new Error(`7Z extraction failed: ${error.message}`))
+      })
     })
   }
 
@@ -433,11 +403,12 @@ class ArchiveService {
   /**
    * Process archive and extract images
    * @param {string} archivePath - Path to archive file
+   * @param {string} repositoryPath - Path to repository for extraction
    * @param {Function} progressCallback - Progress callback (processed, total)
    * @param {boolean} forceReprocess - Force reprocessing even if already processed
    * @returns {Promise<Object>} Processing result
    */
-  async processArchive(archivePath, progressCallback, forceReprocess = false) {
+  async processArchive(archivePath, repositoryPath, progressCallback, forceReprocess = false) {
     console.log(`[ARCHIVE] Processing archive: ${archivePath}`)
 
     // Check if already processed
@@ -461,9 +432,10 @@ class ArchiveService {
       `[ARCHIVE] Archive type: ${metadata.type}, size: ${(metadata.size / 1024 / 1024).toFixed(2)}MB`
     )
 
-    // Create extraction directory
-    const randomBytes = crypto.randomBytes(8).toString('hex')
-    const extractDir = path.join(this.tempDir, `extract_${Date.now()}_${randomBytes}`)
+    // Create extraction directory in repository
+    const archiveName = path.basename(archivePath, path.extname(archivePath))
+    const sanitizedName = archiveName.replace(/[^a-zA-Z0-9\-_]/g, '_')
+    const extractDir = path.join(repositoryPath, sanitizedName)
     await fs.mkdir(extractDir, { recursive: true })
 
     let extractedFiles = []
