@@ -7,6 +7,7 @@ class ImageGallery {
         this.debugLogs = [];
         this.blobUrls = [];
         this.fullscreenWheelHandler = null;
+        this.idCounter = 0; // For collision-resistant ID generation
 
         this.initializeElements();
         this.bindEvents();
@@ -16,7 +17,14 @@ class ImageGallery {
         this.setupDebugCapture();
 
         console.log('🔍 DEBUG: Gallery initialized with debug logging');
-        console.log('🔍 DEBUG: Press Ctrl+D to export full debug logs to file');
+        console.log('[DEBUG] Renderer logs will be automatically saved to main process debug file');
+
+        // Set up automatic log syncing
+        this.setupAutoLogSync();
+    }
+
+    generateUniqueId() {
+        return `img_${++this.idCounter}_${Date.now()}`;
     }
 
     setupDebugCapture() {
@@ -49,68 +57,42 @@ class ImageGallery {
         };
     }
 
-    async exportDebugLogs() {
-        let mainLogPath = '';
-        try {
-            mainLogPath = await window.electronAPI.getDebugLogPath();
-        } catch (e) {
-            console.warn('⚠️ Could not get main process log path:', e);
-        }
+    setupAutoLogSync() {
+        // Sync logs every 30 seconds
+        this.logSyncInterval = setInterval(() => {
+            this.syncLogsToMain();
+        }, 30000);
 
-        const fullLogs = [
-            '=== GALLERY DEBUG LOGS ===',
-            `Generated: ${new Date().toISOString()}`,
-            `Platform: ${window.electronAPI.platform}`,
-            `Total images: ${this.images.length}`,
-            `Memory usage: ${performance.memory ? `${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2)}MB` : 'N/A'}`,
-            '',
-            '=== MAIN PROCESS LOG PATH ===',
-            mainLogPath || 'Not available',
-            '',
-            '=== RENDERER PROCESS LOGS ===',
-            ...this.debugLogs
-        ];
+        // Sync logs before page unload
+        window.addEventListener('beforeunload', () => {
+            this.syncLogsToMain();
+        });
 
-        // Try File System Access API first (modern browsers)
-        if ('showSaveFilePicker' in window) {
+        // Sync logs when app becomes hidden (minimized, etc.)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.syncLogsToMain();
+            }
+        });
+    }
+
+    async syncLogsToMain() {
+        if (this.debugLogs.length > 0) {
             try {
-                const handle = await window.showSaveFilePicker({
-                    suggestedName: `gallery-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`,
-                    types: [{
-                        description: 'Text Files',
-                        accept: { 'text/plain': ['.txt'] }
-                    }]
-                });
-                const writable = await handle.createWritable();
-                await writable.write(fullLogs.join('\n'));
-                await writable.close();
-                console.log('📄 Debug logs exported via File System Access API');
-                return;
-            } catch (err) {
-                // User cancelled or API not supported, fall back to blob download
-                if (err.name !== 'AbortError') {
-                    console.warn('⚠️ File System Access API failed, falling back to download:', err);
-                } else {
-                    return; // User cancelled
-                }
+                await window.electronAPI.appendRendererLogs(this.debugLogs);
+                console.log(`🔍 DEBUG: Synced ${this.debugLogs.length} logs to main process`);
+                // Clear the logs after successful sync
+                this.debugLogs = [];
+            } catch (error) {
+                console.error('🔍 DEBUG: Failed to sync logs to main process:', error);
             }
         }
+    }
 
-        // Fallback to blob download for older browsers
-        const blob = new Blob([fullLogs.join('\n')], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `gallery-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        console.log('📄 Debug logs exported to Downloads folder (fallback method)');
-        if (mainLogPath) {
-            console.log(`🔍 DEBUG: Main process logs available at: ${mainLogPath}`);
-        }
+    async exportDebugLogs() {
+        // Legacy method - now just triggers immediate sync
+        await this.syncLogsToMain();
+        console.log('🔍 DEBUG: Logs synced to main process debug file');
     }
 
     initializeElements() {
@@ -263,7 +245,7 @@ class ImageGallery {
                     const source = batch[idx];
                     console.error('❌ Promise rejected:', settled.reason);
                     allResults.push({
-                        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        id: this.generateUniqueId(),
                         name: source?.name || source?.path || 'Unknown',
                         path: source?.path,
                         error: true,
@@ -350,7 +332,7 @@ class ImageGallery {
                     const source = batch[idx];
                     console.error('❌ Promise rejected:', settled.reason);
                     allResults.push({
-                        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        id: this.generateUniqueId(),
                         name: source?.name || source?.path || 'Unknown',
                         path: source?.path,
                         error: true,
@@ -405,7 +387,7 @@ class ImageGallery {
                     const processTime = performance.now() - startTime;
                     console.log(`✅ Processed ${file.name} in ${processTime.toFixed(2)}ms`);
                     resolve({
-                        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        id: this.generateUniqueId(),
                         name: file.name,
                         path: file.path,
                         dataUrl: fileUrl,
@@ -483,7 +465,7 @@ class ImageGallery {
                     const processTime = performance.now() - startTime;
                     console.log(`✅ Loaded ${filePath.split(/[/\\]/).pop()} in ${processTime.toFixed(2)}ms`);
                     resolve({
-                        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        id: this.generateUniqueId(),
                         name: filePath.split(/[/\\]/).pop(),
                         path: filePath,
                         dataUrl: fileUrl,
@@ -706,8 +688,8 @@ class ImageGallery {
         // Global shortcuts
         if (e.ctrlKey && e.key === 'd') {
             e.preventDefault();
-            console.log('🔍 DEBUG: Exporting debug logs...');
-            this.exportDebugLogs();
+            console.log('🔍 DEBUG: Ctrl+D detected, syncing logs to main process...');
+            this.syncLogsToMain();
             return;
         }
 

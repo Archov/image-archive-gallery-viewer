@@ -8,6 +8,35 @@ const { performance } = require('node:perf_hooks');
 // Store user-selected directories for security validation
 let allowedDirectories = new Set();
 
+// App configuration
+let appConfig = {
+  maxFileSizeMB: 50  // Default 50MB limit for individual files
+};
+
+// Load app configuration from user data directory
+async function loadAppConfig() {
+  try {
+    const userDataDir = app.getPath('userData');
+    const configPath = path.join(userDataDir, 'config.json');
+
+    // Create default config if it doesn't exist
+    try {
+      await fs.access(configPath);
+    } catch {
+      await fs.writeFile(configPath, JSON.stringify(appConfig, null, 2));
+      console.log('[CONFIG] Created default config file at:', configPath);
+    }
+
+    // Load and merge with defaults
+    const configData = await fs.readFile(configPath, 'utf8');
+    const loadedConfig = JSON.parse(configData);
+    appConfig = { ...appConfig, ...loadedConfig };
+    console.log('[CONFIG] Loaded app config:', appConfig);
+  } catch (error) {
+    console.warn('[WARN] Failed to load config, using defaults:', error.message);
+  }
+}
+
 // Security validation function
 function validateFilePath(filePath) {
   if (!filePath || typeof filePath !== 'string') {
@@ -117,27 +146,30 @@ console.warn = (...args) => {
 // Graceful shutdown handling
 const saveDebugLogs = () => {
     try {
-        require('fs').writeFileSync(debugLogPath, debugLogs.join('\n'));
-        originalConsoleLog(`🔍 DEBUG: Main process logs saved to: ${debugLogPath}`);
+        // Append main process logs to the existing file (which may already contain renderer logs)
+        const fs = require('fs');
+        const mainLogsContent = '\n=== MAIN PROCESS LOGS (FINAL) ===\n' + debugLogs.join('\n') + '\n';
+        fs.appendFileSync(debugLogPath, mainLogsContent);
+        originalConsoleLog(`[DEBUG] Main process logs saved to: ${debugLogPath}`);
     } catch (e) {
         // ignore
     }
 };
 
 app.on('before-quit', () => {
-    console.log('🔄 Application shutting down gracefully...');
+    console.log('[INFO] Application shutting down gracefully...');
     saveDebugLogs();
 });
 
 // Handle SIGINT (Ctrl+C) and SIGTERM (kill)
 process.on('SIGINT', () => {
-    console.log('🛑 Received SIGINT, shutting down...');
+    console.log('[INFO] Received SIGINT, shutting down...');
     saveDebugLogs();
     app.quit();
 });
 
 process.on('SIGTERM', () => {
-    console.log('🛑 Received SIGTERM, shutting down...');
+    console.log('[INFO] Received SIGTERM, shutting down...');
     saveDebugLogs();
     app.quit();
 });
@@ -184,7 +216,10 @@ function createWindow() {
 
 // App event handlers
 app.whenReady().then(async () => {
-  // Create data directories first
+  // Load app configuration first
+  await loadAppConfig();
+
+  // Create data directories
   const userDataDir = app.getPath('userData');
   const imagesDir = path.join(userDataDir, 'images');
   const tempDir = app.getPath('temp');
@@ -216,7 +251,7 @@ app.on('activate', () => {
 
 // IPC handlers for file operations
 ipcMain.handle('select-files', async () => {
-  console.log('🔍 DEBUG: IPC select-files called');
+  console.log('[DEBUG] IPC select-files called');
   const startTime = performance.now();
 
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -230,7 +265,7 @@ ipcMain.handle('select-files', async () => {
   });
 
   const dialogTime = performance.now() - startTime;
-  console.log(`🔍 DEBUG: File dialog completed in ${dialogTime.toFixed(2)}ms, returned ${result.filePaths?.length || 0} files`);
+  console.log(`[DEBUG] File dialog completed in ${dialogTime.toFixed(2)}ms, returned ${result.filePaths?.length || 0} files`);
 
   // Add parent directories to allowed list for security
   if (result.filePaths && result.filePaths.length > 0) {
@@ -269,15 +304,23 @@ ipcMain.handle('select-directory', async () => {
 ipcMain.handle('read-file', async (event, filePath) => {
   try {
     const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
-    console.log(`🔍 DEBUG: IPC read-file called for: ${displayName}`);
+    console.log(`[DEBUG] IPC read-file called for: ${displayName}`);
     const startTime = performance.now();
     const validatedPath = validateFilePath(filePath);
+
+    // Check file size before reading to prevent large IPC transfers
+    const stats = await fs.stat(validatedPath);
+    const maxFileSizeBytes = appConfig.maxFileSizeMB * 1024 * 1024;
+    if (stats.size > maxFileSizeBytes) {
+      throw new Error(`File too large: ${(stats.size / (1024 * 1024)).toFixed(2)} MB (limit: ${appConfig.maxFileSizeMB} MB)`);
+    }
+
     const buffer = await fs.readFile(validatedPath);
     const readTime = performance.now() - startTime;
-    console.log(`🔍 DEBUG: File read completed in ${readTime.toFixed(2)}ms, size: ${(buffer.length / 1024).toFixed(2)}KB`);
+    console.log(`[DEBUG] File read completed in ${readTime.toFixed(2)}ms, size: ${(buffer.length / 1024).toFixed(2)}KB`);
     return buffer;
   } catch (error) {
-    console.error(`❌ Failed to read file:`, error.message);
+    console.error(`[ERROR] Failed to read file:`, error.message);
     throw new Error(`Failed to read file: ${error.message}`);
   }
 });
@@ -285,12 +328,12 @@ ipcMain.handle('read-file', async (event, filePath) => {
 ipcMain.handle('get-file-stats', async (event, filePath) => {
   try {
     const displayName = typeof filePath === 'string' ? path.basename(filePath) : '<invalid>';
-    console.log(`🔍 DEBUG: IPC get-file-stats called for: ${displayName}`);
+    console.log(`[DEBUG] IPC get-file-stats called for: ${displayName}`);
     const startTime = performance.now();
     const validatedPath = validateFilePath(filePath);
     const stats = await fs.stat(validatedPath);
     const statTime = performance.now() - startTime;
-    console.log(`🔍 DEBUG: File stats completed in ${statTime.toFixed(2)}ms, size: ${(stats.size / 1024).toFixed(2)}KB`);
+    console.log(`[DEBUG] File stats completed in ${statTime.toFixed(2)}ms, size: ${(stats.size / 1024).toFixed(2)}KB`);
     return {
       size: stats.size,
       mtimeMs: stats.mtimeMs,
@@ -298,14 +341,38 @@ ipcMain.handle('get-file-stats', async (event, filePath) => {
       isFile: stats.isFile()
     };
   } catch (error) {
-    console.error(`❌ Failed to get file stats:`, error.message);
+    console.error(`[ERROR] Failed to get file stats:`, error.message);
     throw new Error(`Failed to get file stats: ${error.message}`);
   }
 });
 
 ipcMain.handle('get-debug-log-path', async () => {
-  console.log(`🔍 DEBUG: Returning debug log path: ${debugLogPath}`);
+  console.log(`[DEBUG] Returning debug log path: ${debugLogPath}`);
   return debugLogPath;
+});
+
+ipcMain.handle('append-renderer-logs', async (event, rendererLogs) => {
+  try {
+    console.log(`[DEBUG] appendRendererLogs called with ${rendererLogs?.length || 0} logs`);
+    if (Array.isArray(rendererLogs) && rendererLogs.length > 0) {
+      const logContent = '\n=== RENDERER PROCESS LOGS ===\n' + rendererLogs.join('\n') + '\n';
+      console.log(`[DEBUG] Writing ${logContent.length} characters to ${debugLogPath}`);
+      require('fs').appendFileSync(debugLogPath, logContent);
+      console.log(`[DEBUG] Successfully appended ${rendererLogs.length} renderer logs to main debug file`);
+
+      // Verify the file was written
+      const fs = require('fs');
+      if (fs.existsSync(debugLogPath)) {
+        const stats = fs.statSync(debugLogPath);
+        console.log(`[DEBUG] File size after append: ${stats.size} bytes`);
+      }
+    } else {
+      console.log('[DEBUG] No renderer logs to append or invalid format');
+    }
+  } catch (error) {
+    console.error('[ERROR] Failed to append renderer logs:', error.message);
+    console.error('[ERROR] Stack:', error.stack);
+  }
 });
 
 // Window control handlers
