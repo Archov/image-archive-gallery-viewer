@@ -231,7 +231,12 @@ ipcMain.handle('select-files', async () => {
   if (result.filePaths && result.filePaths.length > 0) {
     result.filePaths.forEach(filePath => {
       const dir = path.dirname(filePath);
-      allowedDirectories.add(dir);
+      try {
+        const canonicalDir = require('fs').realpathSync(dir);
+        allowedDirectories.add(canonicalDir);
+      } catch {
+        allowedDirectories.add(dir);
+      }
     });
   }
 
@@ -245,7 +250,12 @@ ipcMain.handle('select-directory', async () => {
 
   // Add selected directory to allowed list for security
   if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-    allowedDirectories.add(result.filePaths[0]);
+    try {
+      const canonicalDir = require('fs').realpathSync(result.filePaths[0]);
+      allowedDirectories.add(canonicalDir);
+    } catch {
+      allowedDirectories.add(result.filePaths[0]);
+    }
   }
 
   return result.canceled ? null : result.filePaths[0] || null;
