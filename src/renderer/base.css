@@ -1,0 +1,61 @@
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #1a1a1a;
+  color: #ffffff;
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* App container */
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Gallery container */
+#gallery-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Utility classes */
+.hidden {
+  display: none !important;
+}
+
+/* Performance optimizations for smooth scrolling */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Keyboard focus visibility */
+#close-fullscreen:focus-visible,
+.nav-btn:focus-visible,
+#file-select-btn:focus-visible,
+#archive-select-btn:focus-visible,
+.load-archive-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}

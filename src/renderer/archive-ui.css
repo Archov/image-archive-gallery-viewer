@@ -1,0 +1,91 @@
+/* Archive management styles */
+#archive-select-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+#archive-select-btn:hover {
+  background: #218838;
+}
+
+#processed-archives-section {
+  margin-top: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#processed-archives-section h3 {
+  margin: 0 0 10px 0;
+  color: #fff;
+  font-size: 16px;
+}
+
+#processed-archives-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.processed-archive-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 5px 0;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.archive-info {
+  flex: 1;
+}
+
+.archive-info strong {
+  display: block;
+  color: white;
+  font-size: 14px;
+}
+
+.archive-meta {
+  color: #ccc;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.load-archive-btn {
+  background: #007acc;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.load-archive-btn:hover {
+  background: #005a9e;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  #drop-zone {
+    transition: none;
+  }
+
+  #file-select-btn {
+    transition: none;
+  }
+
+  .load-archive-btn {
+    transition: none;
+  }
+}
