@@ -23,7 +23,12 @@ yarn-debug.log*
 .vscode/
 .cursor/
 temp/
+test_images/
 images/
+
+# Tool binaries
+opengrep.exe
+
 # Environment variables
 .env
 image-gallery.code-workspace

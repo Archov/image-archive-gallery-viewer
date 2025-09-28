@@ -11,7 +11,13 @@
     "build-mac": "electron-builder --mac",
     "build-linux": "electron-builder --linux",
     "build-all": "electron-builder --win --mac --linux",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "lint": "biome check .",
+    "lint-fix": "biome check --write .",
+    "format": "biome format .",
+    "format-write": "biome format --write .",
+    "security-scan": "opengrep --config auto",
+    "analyze": "npm run lint && npm run security-scan"
   },
   "keywords": [
     "image-gallery",
@@ -23,10 +29,12 @@
   "author": "You",
   "license": "MIT",
   "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
     "@electron/rebuild": "^4.0.1",
     "cross-env": "^7.0.3",
     "electron": "^28.1.0",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "opengrep": "^1.0.0"
   },
   "build": {
     "appId": "com.yourname.image-gallery-manager",
@@ -38,6 +46,9 @@
       "src/**/*",
       "package.json",
       "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/7zip-bin/**/*"
     ],
     "win": {
       "target": "nsis",
@@ -57,5 +68,11 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
+  },
+  "dependencies": {
+    "7zip-bin": "^5.2.0",
+    "adm-zip": "^0.5.16",
+    "node-7z": "^3.0.0",
+    "node-unrar-js": "^2.0.2"
   }
 }
