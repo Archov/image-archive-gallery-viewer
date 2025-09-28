@@ -1,6 +1,13 @@
 /**
  * Archive Database - Handles archive metadata and database operations
  */
+const fs = require('node:fs').promises
+const fsNative = require('node:fs')
+const crypto = require('node:crypto')
+const path = require('node:path')
+const secureFs = require('./secure-fs')
+const archiveExtractors = require('./archive-extractors')
+
 class ArchiveDatabase {
   constructor() {
     this.archivesDbPath = null
@@ -14,8 +21,6 @@ class ArchiveDatabase {
    * Initialize archives database file
    */
   async initializeArchivesDb() {
-    const fs = require('node:fs').promises
-
     try {
       await fs.access(this.archivesDbPath)
     } catch {
@@ -39,8 +44,6 @@ class ArchiveDatabase {
    * Load archives database
    */
   async loadArchivesDb() {
-    const fs = require('node:fs').promises
-
     try {
       const data = await fs.readFile(this.archivesDbPath, 'utf8')
       return JSON.parse(data)
@@ -54,8 +57,6 @@ class ArchiveDatabase {
    * Save archives database
    */
   async saveArchivesDb(db) {
-    const fs = require('node:fs').promises
-
     try {
       await fs.writeFile(this.archivesDbPath, JSON.stringify(db, null, 2))
     } catch (error) {
@@ -69,13 +70,10 @@ class ArchiveDatabase {
    * @returns {Promise<string>} SHA-256 hash
    */
   async calculateFileHash(filePath) {
-    const crypto = require('node:crypto')
-    const secureFs = require('./secure-fs')
-
     return new Promise((resolve, reject) => {
       const hash = crypto.createHash('sha256')
       const sanitized = secureFs.sanitizeFilePath(filePath)
-      const stream = require('node:fs').createReadStream(sanitized)
+      const stream = fsNative.createReadStream(sanitized)
 
       stream.on('data', (chunk) => {
         hash.update(chunk)
@@ -113,10 +111,6 @@ class ArchiveDatabase {
    * @returns {Promise<Object>} Archive metadata
    */
   async getArchiveMetadata(filePath) {
-    const secureFs = require('./secure-fs')
-    const path = require('node:path')
-    const archiveExtractors = require('./archive-extractors')
-
     const stats = await secureFs.stat(filePath)
     const hash = await this.calculateFileHash(filePath)
 
@@ -132,64 +126,17 @@ class ArchiveDatabase {
   }
 
   /**
-   * Clean up old extraction directories
-   * @param {number} maxAgeHours - Maximum age in hours (default 24)
+   * Get archive by hash (efficient single record lookup)
+   * @param {string} hash - Archive hash
+   * @returns {Promise<Object|null>} Archive metadata or null if not found
    */
-  async cleanupOldExtractions(maxAgeHours = 24) {
-    const secureFs = require('./secure-fs')
-    const fs = require('node:fs').promises
-    const fsNative = require('node:fs')
-    const path = require('node:path')
-
-    // Early guard: bail out if tempDir is not set
-    if (!this.tempDir) {
-      console.warn('[ARCHIVE] cleanupOldExtractions: tempDir not set, skipping cleanup')
-      return 0
-    }
-
+  async getArchiveByHash(hash) {
     try {
       const db = await this.loadArchivesDb()
-      const cutoffTime = Date.now() - maxAgeHours * 60 * 60 * 1000
-
-      let cleanedCount = 0
-      for (const [hash, archive] of Object.entries(db.archives)) {
-        if (archive.extractedAt && archive.extractedAt < cutoffTime) {
-          try {
-            // SECURITY: Validate that extractDir is within our temp directory
-            const resolvedExtractDir = path.resolve(archive.extractDir)
-            const resolvedTempDir = path.resolve(this.tempDir)
-
-            const rel = path.relative(resolvedTempDir, resolvedExtractDir)
-            if (rel.startsWith('..') || path.isAbsolute(rel)) {
-              console.warn(
-                `[ARCHIVE] Skipping cleanup of directory outside temp area: ${archive.extractDir}`
-              )
-              continue
-            }
-
-            await secureFs.access(archive.extractDir, fsNative.constants.R_OK)
-            await fs.rm(archive.extractDir, { recursive: true, force: true })
-            delete db.archives[hash]
-            cleanedCount++
-          } catch (_error) {
-            // Directory might already be gone, just remove from DB
-            delete db.archives[hash]
-            cleanedCount++
-          }
-        }
-      }
-
-      db.lastCleanup = Date.now()
-      await this.saveArchivesDb(db)
-
-      if (cleanedCount > 0) {
-        console.log(`[ARCHIVE] Cleaned up ${cleanedCount} old extractions`)
-      }
-
-      return cleanedCount
+      return db.archives[hash] || null
     } catch (error) {
-      console.warn('[ARCHIVE] Cleanup failed:', error.message)
-      return 0
+      console.warn('[ARCHIVE] Could not get archive by hash:', error.message)
+      return null
     }
   }
 

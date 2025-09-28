@@ -173,6 +173,15 @@ class ArchiveService {
   }
 
   /**
+   * Get archive by hash (efficient single record lookup)
+   * @param {string} hash - Archive hash
+   * @returns {Promise<Object|null>} Archive metadata or null if not found
+   */
+  async getArchiveByHash(hash) {
+    return await archiveDatabase.getArchiveByHash(hash)
+  }
+
+  /**
    * Get list of processed archives
    * @returns {Promise<Array>} List of archives
    */

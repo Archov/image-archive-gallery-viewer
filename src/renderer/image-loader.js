@@ -50,10 +50,6 @@ class ImageLoader {
   async loadFiles(files) {
     console.log('🔍 DEBUG: loadFiles called with', files.length, 'files')
 
-    // Only revoke blob URLs when we've cleared out the gallery entries that reference them.
-    if (!this.gallery?.images || this.gallery.images.length === 0) {
-      this.cleanupBlobUrls()
-    }
     // Separate image files and archive files
     const imageFiles = files.filter((file) => this.isImageFile(file))
     const archiveFiles = files.filter((file) => this.isArchiveFile(file))

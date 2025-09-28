@@ -368,8 +368,7 @@ class IPCHandlers {
 
         console.log(`[DEBUG] IPC load-processed-archive called for hash: ${archiveHash}`)
 
-        const db = await this.archiveService.loadArchivesDb()
-        const archive = db.archives[archiveHash]
+        const archive = await this.archiveService.getArchiveByHash(archiveHash)
 
         if (!archive) {
           throw new Error('Archive not found')
@@ -382,8 +381,8 @@ class IPCHandlers {
           throw new Error('Archive extraction directory no longer exists')
         }
 
-        // Get all image files from the extraction directory
-        const imageFiles = await this.archiveService.scanDirectoryForImages(archive.extractDir)
+        // Use stored extractedFiles list instead of rescanning directory
+        const imageFiles = archive.extractedFiles || []
 
         return {
           metadata: archive,
