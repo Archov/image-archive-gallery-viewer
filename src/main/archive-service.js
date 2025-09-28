@@ -435,7 +435,9 @@ class ArchiveService {
     // Create extraction directory in repository
     const archiveName = path.basename(archivePath, path.extname(archivePath))
     const sanitizedName = archiveName.replace(/[^a-zA-Z0-9\-_]/g, '_')
-    const extractDir = path.join(repositoryPath, sanitizedName)
+    // Add first 8 chars of hash to prevent collisions
+    const hashPrefix = metadata.hash.substring(0, 8)
+    const extractDir = path.join(repositoryPath, `${sanitizedName}_${hashPrefix}`)
     await fs.mkdir(extractDir, { recursive: true })
 
     let extractedFiles = []

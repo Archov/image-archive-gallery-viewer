@@ -111,9 +111,17 @@ reviews:
     - Code style preferences that don't affect functionality
     - Documentation completeness for internal functions
 
+    ## Important Security Model Learning
+    PR: Archov/image-archive-gallery-viewer#4
+    File: src/main/secure-fs.js:195-200
+    Timestamp: 2025-09-27T23:15:36.243Z
+    Learning: This image gallery application is designed for individual private use with broad read access to any directory on the user's computer. The security model prioritizes usability over restrictive access controls, relying on OS-level permissions as the primary security boundary. Write operations are still restricted to user-approved directories to prevent path traversal attacks during archive extraction.
+
 # Code generation settings (keep minimal for personal project)
 code_generation:
   docstrings:
     language: "en-US"
   unit_tests:
     enabled: false  # Not focusing on test generation for this project
+
+

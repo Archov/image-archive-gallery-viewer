@@ -358,7 +358,7 @@ async function migrateRepositoryContent(oldPath, newPath, existingArchives = nul
         if (archive.extractDir) {
           try {
             // Create archive-specific subdirectory in new repository
-            const archiveName = archive.name.replace(/[^a-zA-Z0-9]/g, '_')
+            const archiveName = archive.name.replace(/[^a-zA-Z0-9\-_]/g, '_')
             const newArchiveDir = path.join(newPath, archiveName)
 
             // Copy the entire extract directory
@@ -979,8 +979,7 @@ ipcMain.handle('process-archive', async (event, archivePath, forceReprocess = fa
 
     // SECURITY: Basic path sanitization for reading
     // Users can process archives from ANYWHERE on their system
-    // No directory restrictions for reading operations
-    const sanitizedArchivePath = path.resolve(archivePath)
+    const sanitizedArchivePath = secureFs.sanitizeFilePath(archivePath)
     // Get current repository path for extraction
     const repositoryPath =
       appConfig.imageRepositoryPath || path.join(app.getPath('userData'), 'images')

@@ -7,7 +7,7 @@ class ImageGallery {
     this.debugLogs = []
     this.blobUrls = []
     this.fullscreenWheelHandler = null
-    this.idCounter = 0 // For collision-resistant ID generation
+    this.idCounter = Date.now() % 100000 // For collision-resistant ID generation across sessions
 
     this.initializeElements()
     this.bindEvents()
@@ -319,9 +319,13 @@ class ImageGallery {
     // this.images = [];
 
     try {
-      // Aggressive batch size for maximum performance - modern systems can handle this
-      const batchSize =
+      // Estimate batch size based on count and rough memory budget (e.g., 200MB)
+      const estimatedSizePerFile = 5 * 1024 * 1024 // Conservative 5MB estimate
+      const memoryBudget = 200 * 1024 * 1024 // 200MB budget
+      const memoryBasedBatchSize = Math.max(1, Math.floor(memoryBudget / estimatedSizePerFile))
+      const countBasedBatchSize =
         filePaths.length < 20 ? 8 : filePaths.length < 100 ? 16 : filePaths.length < 500 ? 32 : 64
+      const batchSize = Math.min(countBasedBatchSize, memoryBasedBatchSize)
       let processedCount = 0
 
       console.log(`🔍 DEBUG: Processing file paths in batches of ${batchSize}...`)
@@ -514,7 +518,7 @@ class ImageGallery {
     // This avoids the slow base64 encoding of large files
     if (file.path) {
       // Try to get file:// URL from path
-      const fileUrl = window.electronAPI.toFileUrl(file.path)
+      const fileUrl = window.electronAPI.toFileUrl?.(file.path)
 
       if (fileUrl) {
         // Direct file path available (usually on desktop)
@@ -594,6 +598,9 @@ class ImageGallery {
   async processImageFileFromPath(filePath) {
     const startTime = performance.now()
     try {
+      if (!window.electronAPI.toFileUrl || !window.electronAPI.getFileStats) {
+        throw new Error('Required Electron APIs not available')
+      }
       const fileUrl = window.electronAPI.toFileUrl(filePath)
 
       const stats = await window.electronAPI.getFileStats(filePath)
