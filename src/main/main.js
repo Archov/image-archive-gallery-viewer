@@ -836,7 +836,7 @@ ipcMain.handle('get-file-stats', async (event, filePath) => {
 
     // SECURITY: Basic path sanitization for reading operations
     // Users can get stats for files from anywhere on their system
-    const sanitizedPath = path.resolve(filePath)
+    const sanitizedPath = secureFs.sanitizeFilePath(filePath)
     const stats = await secureFs.stat(sanitizedPath)
     const statTime = performance.now() - startTime
     console.log(
@@ -1038,7 +1038,7 @@ ipcMain.handle('load-processed-archive', async (event, archiveHash) => {
 
     // Check if extraction directory still exists
     try {
-      await fs.access(archive.extractDir)
+      await secureFs.access(archive.extractDir, fsNative.constants.R_OK)
     } catch {
       throw new Error('Archive extraction directory no longer exists')
     }

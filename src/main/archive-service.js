@@ -138,16 +138,16 @@ class ArchiveService {
   /**
    * Check if archive has already been processed
    * @param {string} filePath - Archive file path
-   * @returns {Promise<boolean>} True if already processed
+   * @returns {Promise<Object>} Object with isProcessed boolean and hash string
    */
   async isArchiveProcessed(filePath) {
     try {
       const hash = await this.calculateFileHash(filePath)
       const db = await this.loadArchivesDb()
-      return hash in db.archives
+      return { isProcessed: hash in db.archives, hash }
     } catch (error) {
       console.warn('[ARCHIVE] Could not check archive status:', error.message)
-      return false
+      return { isProcessed: false, hash: null }
     }
   }
 
@@ -312,34 +312,40 @@ class ArchiveService {
    * @returns {Promise<Array>} List of extracted files
    */
   async extract7z(archivePath, extractPath, progressCallback) {
-    return new Promise((resolve, reject) => {
-      const stream = Seven.extract(archivePath, extractPath, {
-        $progress: true,
-        $bin: sevenBin.path7za,
-      })
+    // 1) List to determine image entries
+    const entries = await new Promise((resolve, reject) => {
+      const list = Seven.list(archivePath, { $bin: sevenBin.path7za })
+      const rows = []
+      list.on('data', (d) => rows.push(d))
+      list.on('end', () => resolve(rows))
+      list.on('error', (e) => reject(new Error(`7Z list failed: ${e.message}`)))
+    })
+    const imageFiles = entries.map((r) => r.file).filter((f) => !!f && this.isImageFile(f))
+    const total = imageFiles.length
 
-      stream.on('progress', (progress) => {
-        if (progressCallback) {
-          // Convert percentage to integer count for consistent API
-          const processedCount = Math.floor((progress.percent / 100) * 100) // Estimate based on percentage
-          progressCallback(processedCount, 100)
+    // 2) Extract only images; keep progress as (processed, total)
+    return new Promise((resolve, reject) => {
+      const stream = Seven.extractFull(
+        archivePath,
+        extractPath,
+        { $progress: true, $bin: sevenBin.path7za },
+        imageFiles
+      )
+      stream.on('progress', (p) => {
+        if (progressCallback && total > 0) {
+          const processed = Math.min(total, Math.round((p.percent / 100) * total))
+          progressCallback(processed, total)
         }
       })
-
       stream.on('end', async () => {
         try {
-          // Scan extracted directory for image files only
-          const allFiles = await this.scanDirectoryForImages(extractPath)
-
-          resolve(allFiles)
-        } catch (error) {
-          reject(new Error(`7Z processing failed: ${error.message}`))
+          const files = await this.scanDirectoryForImages(extractPath)
+          resolve(files)
+        } catch (e) {
+          reject(new Error(`7Z processing failed: ${e.message}`))
         }
       })
-
-      stream.on('error', (error) => {
-        reject(new Error(`7Z extraction failed: ${error.message}`))
-      })
+      stream.on('error', (e) => reject(new Error(`7Z extraction failed: ${e.message}`)))
     })
   }
 
@@ -412,10 +418,9 @@ class ArchiveService {
     console.log(`[ARCHIVE] Processing archive: ${archivePath}`)
 
     // Check if already processed
-    const isProcessed = await this.isArchiveProcessed(archivePath)
+    const { isProcessed, hash } = await this.isArchiveProcessed(archivePath)
     if (isProcessed && !forceReprocess) {
       // Return information about the previously processed archive
-      const hash = await this.calculateFileHash(archivePath)
       const db = await this.loadArchivesDb()
       const existingArchive = db.archives[hash]
 
@@ -508,12 +513,10 @@ class ArchiveService {
               console.warn(
                 `[ARCHIVE] Skipping cleanup of directory outside temp area: ${archive.extractDir}`
               )
-              delete db.archives[hash]
-              cleanedCount++
               continue
             }
 
-            await fs.access(archive.extractDir)
+            await secureFs.access(archive.extractDir, fsNative.constants.R_OK)
             await fs.rm(archive.extractDir, { recursive: true, force: true })
             delete db.archives[hash]
             cleanedCount++

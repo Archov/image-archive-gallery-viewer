@@ -42,7 +42,13 @@ class ImageGallery {
 
     console.log = (...args) => {
       const message = args
-        .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)))
+        .map((arg) => {
+          try {
+            return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+          } catch {
+            return String(arg)
+          }
+        })
         .join(' ')
       this.debugLogs.push(`[LOG ${new Date().toISOString()}] ${message}`)
       if (this.debugLogs.length > MAX_DEBUG_LOG_LINES) this.debugLogs.shift()
@@ -51,7 +57,13 @@ class ImageGallery {
 
     console.error = (...args) => {
       const message = args
-        .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)))
+        .map((arg) => {
+          try {
+            return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+          } catch {
+            return String(arg)
+          }
+        })
         .join(' ')
       this.debugLogs.push(`[ERROR ${new Date().toISOString()}] ${message}`)
       if (this.debugLogs.length > MAX_DEBUG_LOG_LINES) this.debugLogs.shift()
@@ -60,7 +72,13 @@ class ImageGallery {
 
     console.warn = (...args) => {
       const message = args
-        .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)))
+        .map((arg) => {
+          try {
+            return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+          } catch {
+            return String(arg)
+          }
+        })
         .join(' ')
       this.debugLogs.push(`[WARN ${new Date().toISOString()}] ${message}`)
       if (this.debugLogs.length > MAX_DEBUG_LOG_LINES) this.debugLogs.shift()
@@ -319,13 +337,15 @@ class ImageGallery {
     // this.images = [];
 
     try {
-      // Estimate batch size based on count and rough memory budget (e.g., 200MB)
-      const estimatedSizePerFile = 5 * 1024 * 1024 // Conservative 5MB estimate
-      const memoryBudget = 200 * 1024 * 1024 // 200MB budget
-      const memoryBasedBatchSize = Math.max(1, Math.floor(memoryBudget / estimatedSizePerFile))
-      const countBasedBatchSize =
-        filePaths.length < 20 ? 8 : filePaths.length < 100 ? 16 : filePaths.length < 500 ? 32 : 64
-      const batchSize = Math.min(countBasedBatchSize, memoryBasedBatchSize)
+      // Optimized batch sizing for performance - larger batches for fewer DOM updates
+      const batchSize =
+        filePaths.length < 50
+          ? 16
+          : filePaths.length < 200
+            ? 32
+            : filePaths.length < 1000
+              ? 64
+              : 128
       let processedCount = 0
 
       console.log(`🔍 DEBUG: Processing file paths in batches of ${batchSize}...`)
@@ -419,7 +439,7 @@ class ImageGallery {
 
     this.showLoading()
     this.updateProgress(0, imageFiles.length)
-    this.images = []
+    // Don't clear images here (archives may have just populated this.images)
 
     try {
       // Aggressive batch size for maximum performance - modern systems can handle this
@@ -598,16 +618,36 @@ class ImageGallery {
   async processImageFileFromPath(filePath) {
     const startTime = performance.now()
     try {
-      if (!window.electronAPI.toFileUrl || !window.electronAPI.getFileStats) {
+      if (!window.electronAPI.getFileStats || !window.electronAPI.readFile) {
         throw new Error('Required Electron APIs not available')
       }
-      const fileUrl = window.electronAPI.toFileUrl(filePath)
 
       const stats = await window.electronAPI.getFileStats(filePath)
 
       console.log(`Processing ${filePath.split(/[/\\]/).pop()}...`)
 
-      return new Promise((resolve, reject) => {
+      // Use blob reading directly for archive-extracted files (more reliable than file:// URLs)
+      const buffer = await window.electronAPI.readFile(filePath)
+      const uint8Array = new Uint8Array(buffer)
+      const extension = filePath.split('.').pop().toLowerCase()
+      const mimeTypes = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        bmp: 'image/bmp',
+        tiff: 'image/tiff',
+        svg: 'image/svg+xml',
+      }
+      const mimeType = mimeTypes[extension] || 'application/octet-stream'
+      const blob = new Blob([uint8Array], { type: mimeType })
+      const blobUrl = URL.createObjectURL(blob)
+
+      // Track blob URLs for cleanup
+      this.blobUrls.push(blobUrl)
+
+      return new Promise((resolve, _reject) => {
         const img = new Image()
 
         img.onload = () => {
@@ -617,7 +657,7 @@ class ImageGallery {
             id: this.generateUniqueId(),
             name: filePath.split(/[/\\]/).pop(),
             path: filePath,
-            dataUrl: fileUrl,
+            dataUrl: blobUrl,
             width: img.naturalWidth,
             height: img.naturalHeight,
             aspectRatio: img.naturalWidth / img.naturalHeight,
@@ -628,15 +668,18 @@ class ImageGallery {
         }
 
         img.onerror = () => {
-          console.log(
-            `❌ File URL failed for ${filePath.split(/[/\\]/).pop()}, trying blob fallback...`
-          )
-          // Fallback to reading the file as blob
-          this.readFileAsBlob(filePath, stats, startTime).then(resolve).catch(reject)
+          console.error(`❌ Failed to load image: ${filePath.split(/[/\\]/).pop()}`)
+          resolve({
+            id: this.generateUniqueId(),
+            name: filePath.split(/[/\\]/).pop(),
+            path: filePath,
+            error: true,
+            dataUrl: null,
+          })
         }
 
-        // Don't set crossOrigin for file:// URLs
-        img.src = fileUrl
+        // Set the image source to the blob URL
+        img.src = blobUrl
       })
     } catch (error) {
       console.error('Error processing file:', filePath, error)
@@ -648,51 +691,6 @@ class ImageGallery {
         dataUrl: null,
       }
     }
-  }
-
-  async readFileAsBlob(filePath, stats, startTime) {
-    console.log(`📖 Reading ${filePath.split(/[/\\]/).pop()} as blob...`)
-    const buffer = await window.electronAPI.readFile(filePath)
-    const uint8Array = new Uint8Array(buffer)
-    const extension = filePath.split('.').pop().toLowerCase()
-    const mimeTypes = {
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      png: 'image/png',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      bmp: 'image/bmp',
-      tiff: 'image/tiff',
-      svg: 'image/svg+xml',
-    }
-    const mimeType = mimeTypes[extension] || 'application/octet-stream'
-    const blob = new Blob([uint8Array], { type: mimeType })
-    const dataUrl = URL.createObjectURL(blob)
-
-    // Track blob URLs for cleanup
-    this.blobUrls.push(dataUrl)
-
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      img.onload = () => {
-        const totalTime = performance.now() - startTime
-        console.log(`✅ Blob loaded ${filePath.split(/[/\\]/).pop()} in ${totalTime.toFixed(2)}ms`)
-        resolve({
-          id: this.generateUniqueId(),
-          name: filePath.split(/[/\\]/).pop(),
-          path: filePath,
-          dataUrl: dataUrl,
-          width: img.naturalWidth,
-          height: img.naturalHeight,
-          aspectRatio: img.naturalWidth / img.naturalHeight,
-          size: stats.size,
-          mtimeMs: stats.mtimeMs,
-          mtimeISO: stats.mtimeISO,
-        })
-      }
-      img.onerror = reject
-      img.src = dataUrl
-    })
   }
 
   cleanupBlobUrls() {
@@ -735,59 +733,66 @@ class ImageGallery {
         const progressHandler = (progress) => {
           this.updateProgress(progress.processed, progress.total)
         }
-        const unsubscribeProgress = window.electronAPI.onArchiveProgress(progressHandler)
+        let unsubscribeProgress = () => {}
+        try {
+          unsubscribeProgress = window.electronAPI.onArchiveProgress(progressHandler)
+          const result = await window.electronAPI.processArchive(archiveFile.path)
 
-        // Process the archive
-        const result = await window.electronAPI.processArchive(archiveFile.path)
-
-        // Remove progress listener
-        unsubscribeProgress()
-
-        if (result.alreadyProcessed) {
-          // Archive was already processed - ask user what to do
-          const choice = confirm(
-            `Archive "${result.metadata.name}" has already been processed and contains ${Array.isArray(result.extractedFiles) ? result.extractedFiles.length : Number(result.extractedFiles) || 0} images.\n\n` +
-              `Choose "OK" to reprocess the archive anyway, or "Cancel" to skip.`
-          )
-
-          if (choice) {
-            // User wants to reprocess
-            this.loadingText.textContent = `Reprocessing ${archiveFile.name || 'archive'}...`
-            const unsubscribeProgressReprocess =
-              window.electronAPI.onArchiveProgress(progressHandler)
-
-            const reprocessResult = await window.electronAPI.processArchive(archiveFile.path, true)
-            unsubscribeProgressReprocess()
-
-            console.log(
-              `✅ Archive reprocessed: ${reprocessResult.metadata.name} (${reprocessResult.extractedFiles.length} images extracted)`
+          if (result.alreadyProcessed) {
+            // Archive was already processed - ask user what to do
+            const choice = confirm(
+              `Archive "${result.metadata.name}" has already been processed and contains ${Array.isArray(result.extractedFiles) ? result.extractedFiles.length : Number(result.extractedFiles) || 0} images.\n\n` +
+                `Choose "OK" to reprocess the archive anyway, or "Cancel" to skip.`
             )
 
-            // Load the newly extracted images
-            if (reprocessResult.extractedFiles.length > 0) {
-              const extractedImagePaths = reprocessResult.extractedFiles.map((f) => f.extractedPath)
-              await this.loadFilesFromPaths(extractedImagePaths)
+            if (choice) {
+              // User wants to reprocess
+              this.loadingText.textContent = `Reprocessing ${archiveFile.name || 'archive'}...`
+              let unsubscribeProgressReprocess = () => {}
+              try {
+                unsubscribeProgressReprocess = window.electronAPI.onArchiveProgress(progressHandler)
+                const reprocessResult = await window.electronAPI.processArchive(
+                  archiveFile.path,
+                  true
+                )
+
+                console.log(
+                  `✅ Archive reprocessed: ${reprocessResult.metadata.name} (${reprocessResult.extractedFiles.length} images extracted)`
+                )
+
+                // Load the newly extracted images
+                if (reprocessResult.extractedFiles.length > 0) {
+                  const extractedImagePaths = reprocessResult.extractedFiles.map(
+                    (f) => f.extractedPath
+                  )
+                  await this.loadFilesFromPaths(extractedImagePaths)
+                }
+              } finally {
+                unsubscribeProgressReprocess()
+              }
+            } else {
+              // User chose to skip - show message about previously processed archive
+              const prevCount = Array.isArray(result.extractedFiles)
+                ? result.extractedFiles.length
+                : Number(result.extractedFiles) || 0
+              alert(
+                `Archive "${result.metadata.name}" was previously processed (${prevCount} images). Skipping.`
+              )
             }
           } else {
-            // User chose to skip - show message about previously processed archive
-            const prevCount = Array.isArray(result.extractedFiles)
-              ? result.extractedFiles.length
-              : Number(result.extractedFiles) || 0
-            alert(
-              `Archive "${result.metadata.name}" was previously processed (${prevCount} images). Skipping.`
+            // Archive was processed successfully
+            console.log(
+              `✅ Archive processed: ${result.metadata.name} (${result.extractedFiles.length} images extracted)`
             )
-          }
-        } else {
-          // Archive was processed successfully
-          console.log(
-            `✅ Archive processed: ${result.metadata.name} (${result.extractedFiles.length} images extracted)`
-          )
 
-          // Load the extracted images
-          if (result.extractedFiles.length > 0) {
-            const extractedImagePaths = result.extractedFiles.map((f) => f.extractedPath)
-            await this.loadFilesFromPaths(extractedImagePaths)
+            // Load the extracted images
+            if (result.extractedFiles.length > 0) {
+              const extractedImagePaths = result.extractedFiles.map((f) => f.extractedPath)
+              await this.loadFilesFromPaths(extractedImagePaths)
+            }
           }
+        } finally {
+          unsubscribeProgress()
         }
       } catch (error) {
         console.error(`❌ Failed to process archive:`, error)
@@ -801,6 +806,9 @@ class ImageGallery {
   async loadProcessedArchive(archiveHash) {
     try {
       console.log(`📦 Loading previously processed archive: ${archiveHash}`)
+
+      // Clear existing gallery when loading a processed archive
+      this.images = []
 
       // Show loading
       this.showLoading()
