@@ -119,7 +119,8 @@ class ArchiveService {
   async calculateFileHash(filePath) {
     return new Promise((resolve, reject) => {
       const hash = crypto.createHash('sha256')
-      const stream = fsNative.createReadStream(filePath)
+      const sanitized = secureFs.sanitizeFilePath(filePath)
+      const stream = fsNative.createReadStream(sanitized)
 
       stream.on('data', (chunk) => {
         hash.update(chunk)
@@ -323,14 +324,24 @@ class ArchiveService {
     const imageFiles = entries.map((r) => r.file).filter((f) => !!f && this.isImageFile(f))
     const total = imageFiles.length
 
-    // 2) Extract only images; keep progress as (processed, total)
+    // 2) Extract with image patterns to filter at extraction time
+    const imagePatterns = [
+      '*.jpg',
+      '*.jpeg',
+      '*.png',
+      '*.gif',
+      '*.webp',
+      '*.bmp',
+      '*.tiff',
+      '*.svg',
+    ]
     return new Promise((resolve, reject) => {
-      const stream = Seven.extractFull(
-        archivePath,
-        extractPath,
-        { $progress: true, $bin: sevenBin.path7za },
-        imageFiles
-      )
+      const stream = Seven.extractFull(archivePath, extractPath, {
+        $progress: true,
+        $bin: sevenBin.path7za,
+        wildcards: imagePatterns, // Extract only files matching these patterns
+        r: true, // Recursive
+      })
       stream.on('progress', (p) => {
         if (progressCallback && total > 0) {
           const processed = Math.min(total, Math.round((p.percent / 100) * total))

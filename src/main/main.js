@@ -146,13 +146,15 @@ function createApplicationMenu() {
     })
 
     // Window menu adjustments for macOS
-    template[4].submenu = [
-      { role: 'close' },
-      { role: 'minimize' },
-      { role: 'zoom' },
-      { type: 'separator' },
-      { role: 'front' },
-    ]
+    const windowMenu = template.find((m) => m.label === 'Window')
+    if (windowMenu)
+      windowMenu.submenu = [
+        { role: 'close' },
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { role: 'front' },
+      ]
   }
 
   const menu = Menu.buildFromTemplate(template)
@@ -194,9 +196,16 @@ async function openSettingsDialog() {
       const oldRepositoryPath = config.imageRepositoryPath
 
       // Check if any archives are still in temp directories (need migration)
-      const hasTempArchives = existingArchives.some((archive) =>
-        archive.extractDir?.startsWith(path.join(app.getPath('temp'), 'gallery-extraction'))
-      )
+      const tempDir = path.join(app.getPath('temp'), 'gallery-extraction')
+      const hasTempArchives = existingArchives.some((archive) => {
+        if (!archive.extractDir) return false
+        try {
+          const rel = path.relative(tempDir, archive.extractDir)
+          return !rel.startsWith('..') && rel !== ''
+        } catch {
+          return false
+        }
+      })
 
       const needsMigration =
         (oldRepositoryPath &&
@@ -265,8 +274,8 @@ async function openSettingsDialog() {
         }
       }
 
-      // Update config with new path
-      appConfig.imageRepositoryPath = selectedPath
+      // Update config with new path (normalized to absolute)
+      appConfig.imageRepositoryPath = path.resolve(selectedPath)
 
       // Save to config file
       try {
@@ -388,7 +397,13 @@ async function migrateRepositoryContent(oldPath, newPath, existingArchives = nul
 
 // Recursively copy directory contents
 async function copyDirectoryRecursive(src, dest) {
-  const stats = await fs.stat(src)
+  const stats = await fsNative.lstat(src)
+
+  if (stats.isSymbolicLink()) {
+    // Skip symlinks for security
+    console.warn(`[MIGRATION] Skipping symlink: ${src}`)
+    return
+  }
 
   if (stats.isDirectory()) {
     await fs.mkdir(dest, { recursive: true })
@@ -418,23 +433,48 @@ async function updateProcessedArchivesPaths(oldPath, newPath, existingArchives =
         const updatedArchive = { ...archive }
 
         // Update extractDir if it was in the old repository
-        if (archive.extractDir?.startsWith(oldPath)) {
-          updatedArchive.extractDir = archive.extractDir.replace(oldPath, newPath)
-          needsUpdate = true
+        if (archive.extractDir) {
+          try {
+            const rel = path.relative(oldPath, archive.extractDir)
+            if (!rel.startsWith('..') && rel !== '') {
+              const newExtractDir = archive.extractDir.replace(oldPath, newPath)
+              if (newExtractDir !== archive.extractDir) {
+                updatedArchive.extractDir = newExtractDir
+                needsUpdate = true
+              }
+            }
+          } catch (_error) {
+            // Path comparison failed, skip
+          }
         }
 
         // Update extractedFiles paths
         if (archive.extractedFiles && Array.isArray(archive.extractedFiles)) {
-          updatedArchive.extractedFiles = archive.extractedFiles.map((file) => {
-            if (file.extractedPath?.startsWith(oldPath)) {
-              return {
-                ...file,
-                extractedPath: file.extractedPath.replace(oldPath, newPath),
+          const updatedFiles = archive.extractedFiles.map((file) => {
+            if (file.extractedPath) {
+              try {
+                const rel = path.relative(oldPath, file.extractedPath)
+                if (!rel.startsWith('..') && rel !== '') {
+                  const newPathExtracted = file.extractedPath.replace(oldPath, newPath)
+                  if (newPathExtracted !== file.extractedPath) {
+                    return {
+                      ...file,
+                      extractedPath: newPathExtracted,
+                    }
+                  }
+                }
+              } catch (_error) {
+                // Path comparison failed, keep original
               }
             }
             return file
           })
-          needsUpdate = true
+
+          // Only update if files actually changed
+          if (JSON.stringify(updatedFiles) !== JSON.stringify(archive.extractedFiles)) {
+            updatedArchive.extractedFiles = updatedFiles
+            needsUpdate = true
+          }
         }
 
         // Update the database if needed
@@ -457,9 +497,8 @@ async function updateProcessedArchivesPaths(oldPath, newPath, existingArchives =
           // Update extractedFiles paths if they exist
           if (db.archives[hash].extractedFiles && Array.isArray(db.archives[hash].extractedFiles)) {
             const oldExtractDir = db.archives[hash].extractedFiles[0]?.extractedPath
-              ?.split(path.sep)
-              .slice(0, -1)
-              .join(path.sep)
+              ? path.dirname(db.archives[hash].extractedFiles[0].extractedPath)
+              : null
             if (oldExtractDir) {
               db.archives[hash].extractedFiles = db.archives[hash].extractedFiles.map((file) => ({
                 ...file,
@@ -881,8 +920,8 @@ ipcMain.handle('set-image-repository-path', async (event) => {
   if (!result.canceled && result.filePaths.length > 0) {
     const selectedPath = result.filePaths[0]
 
-    // Update config
-    appConfig.imageRepositoryPath = selectedPath
+    // Update config (normalized to absolute)
+    appConfig.imageRepositoryPath = path.resolve(selectedPath)
 
     // Save to config file
     try {
@@ -913,6 +952,22 @@ ipcMain.handle('append-renderer-logs', async (event, rendererLogs) => {
   try {
     console.log(`[DEBUG] appendRendererLogs called with ${rendererLogs?.length || 0} logs`)
     if (Array.isArray(rendererLogs) && rendererLogs.length > 0) {
+      // Check file size and rotate if too large (10MB limit)
+      const MAX_LOG_SIZE = 10 * 1024 * 1024 // 10MB
+      try {
+        if (fsNative.existsSync(debugLogPath)) {
+          const stats = await fsNative.promises.stat(debugLogPath)
+          if (stats.size > MAX_LOG_SIZE) {
+            // Rotate log file by renaming and starting fresh
+            const rotatedPath = `${debugLogPath}.${Date.now()}.old`
+            await fsNative.promises.rename(debugLogPath, rotatedPath)
+            console.log(`[DEBUG] Rotated debug log to ${rotatedPath} (was ${stats.size} bytes)`)
+          }
+        }
+      } catch (error) {
+        console.warn('[WARN] Failed to check/rotate debug log file:', error.message)
+      }
+
       const logContent = `\n=== RENDERER PROCESS LOGS ===\n${rendererLogs.join('\n')}\n`
       console.log(`[DEBUG] Writing ${logContent.length} characters to ${debugLogPath}`)
       await fsNative.promises.appendFile(debugLogPath, logContent)

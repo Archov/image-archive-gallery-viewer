@@ -201,11 +201,11 @@ class ImageGallery {
 
   setupIpcListeners() {
     // Menu-triggered actions
-    window.electronAPI.onMenuOpenImages(() => {
+    window.electronAPI?.onMenuOpenImages?.(() => {
       this.selectFiles()
     })
 
-    window.electronAPI.onMenuOpenArchives(() => {
+    window.electronAPI?.onMenuOpenArchives?.(() => {
       this.selectArchives()
     })
   }
@@ -639,6 +639,7 @@ class ImageGallery {
         bmp: 'image/bmp',
         tiff: 'image/tiff',
         svg: 'image/svg+xml',
+        avif: 'image/avif',
       }
       const mimeType = mimeTypes[extension] || 'application/octet-stream'
       const blob = new Blob([uint8Array], { type: mimeType })
@@ -703,7 +704,17 @@ class ImageGallery {
   }
 
   isImageFile(file) {
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg']
+    const imageExtensions = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.webp',
+      '.bmp',
+      '.tiff',
+      '.svg',
+      '.avif',
+    ]
     const fileName = (file?.name || file?.path || '').toLowerCase()
     return imageExtensions.some((ext) => fileName.endsWith(ext))
   }
@@ -719,6 +730,7 @@ class ImageGallery {
 
     // Clear existing gallery when processing new archives
     this.images = []
+    this.cleanupBlobUrls()
 
     for (const archiveFile of archiveFiles) {
       try {
@@ -809,6 +821,7 @@ class ImageGallery {
 
       // Clear existing gallery when loading a processed archive
       this.images = []
+      this.cleanupBlobUrls()
 
       // Show loading
       this.showLoading()
@@ -930,7 +943,7 @@ class ImageGallery {
         img.className = 'gallery-image'
         img.src = image.dataUrl
         img.alt = image.name
-        img.loading = 'eager' // Load immediately for gallery performance
+        img.loading = 'lazy' // Lazy load for better performance with large galleries
         img.decoding = 'async' // Don't block on image decoding
         img.draggable = false // Disable dragging to prevent accidental gallery reload
         img.addEventListener('click', () => this.openFullscreen(index))
