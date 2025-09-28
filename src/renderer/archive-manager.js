@@ -149,9 +149,7 @@ class ArchiveManager {
   async loadProcessedArchivesList() {
     try {
       const processedArchives = await window.electronAPI.getProcessedArchives()
-      if (processedArchives && processedArchives.length > 0) {
-        this.displayProcessedArchives(processedArchives)
-      }
+      this.displayProcessedArchives(processedArchives || [])
     } catch (error) {
       console.warn('Failed to load processed archives list:', error)
     }
@@ -161,6 +159,13 @@ class ArchiveManager {
     if (!this.gallery.processedArchivesList) return
 
     this.gallery.processedArchivesList.innerHTML = ''
+
+    if (!Array.isArray(archives) || archives.length === 0) {
+      if (this.gallery.processedArchivesSection) {
+        this.gallery.processedArchivesSection.style.display = 'none'
+      }
+      return
+    }
 
     archives.forEach((archive) => {
       const archiveItem = document.createElement('div')

@@ -84,13 +84,14 @@ class DebugLogger {
       const logsToSend = this.debugLogs.splice(0, this.debugLogs.length)
       try {
         await window.electronAPI.appendRendererLogs(logsToSend)
-        console.log(`[DEBUG] Synced ${logsToSend.length} logs to main process`)
+        // Avoid logging here; the wrapped console would re-queue this message and trigger needless syncs.
       } catch (error) {
         // Restore logs if sync failed
         this.debugLogs = logsToSend.concat(this.debugLogs)
         console.error('[ERROR] Failed to sync logs to main process:', error)
       }
     }
+  }
   }
 
   async exportDebugLogs() {

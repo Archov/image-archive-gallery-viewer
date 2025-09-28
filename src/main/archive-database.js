@@ -141,6 +141,12 @@ class ArchiveDatabase {
     const fsNative = require('node:fs')
     const path = require('node:path')
 
+    // Early guard: bail out if tempDir is not set
+    if (!this.tempDir) {
+      console.warn('[ARCHIVE] cleanupOldExtractions: tempDir not set, skipping cleanup')
+      return 0
+    }
+
     try {
       const db = await this.loadArchivesDb()
       const cutoffTime = Date.now() - maxAgeHours * 60 * 60 * 1000
@@ -179,8 +185,11 @@ class ArchiveDatabase {
       if (cleanedCount > 0) {
         console.log(`[ARCHIVE] Cleaned up ${cleanedCount} old extractions`)
       }
+
+      return cleanedCount
     } catch (error) {
       console.warn('[ARCHIVE] Cleanup failed:', error.message)
+      return 0
     }
   }
 

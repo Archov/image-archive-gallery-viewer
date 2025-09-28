@@ -96,11 +96,10 @@ class RepositoryManager {
   }
 
   async copyDirectoryRecursive(src, dest) {
-    const fsNative = require('node:fs')
     const fs = require('node:fs').promises
     const path = require('node:path')
 
-    const stats = await fsNative.lstat(src)
+    const stats = await fs.lstat(src)
 
     if (stats.isSymbolicLink()) {
       // Skip symlinks for security
@@ -121,7 +120,6 @@ class RepositoryManager {
       // Copy file
       await fs.copyFile(src, dest)
     }
-  }
 
   async updateProcessedArchivesPaths(oldPath, newPath, existingArchives = null) {
     const path = require('node:path')

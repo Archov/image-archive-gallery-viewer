@@ -60,7 +60,7 @@ class MenuManager {
           { role: 'cut' },
           { role: 'copy' },
           { role: 'paste' },
-          { role: 'selectall' },
+          { role: 'selectAll' },
         ],
       },
       {
