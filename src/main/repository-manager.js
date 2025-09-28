@@ -120,6 +120,7 @@ class RepositoryManager {
       // Copy file
       await fs.copyFile(src, dest)
     }
+  }
 
   async updateProcessedArchivesPaths(oldPath, newPath, existingArchives = null) {
     const path = require('node:path')

@@ -92,7 +92,6 @@ class DebugLogger {
       }
     }
   }
-  }
 
   async exportDebugLogs() {
     // Legacy method - now just triggers immediate sync

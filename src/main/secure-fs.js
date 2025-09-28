@@ -211,6 +211,12 @@ const secureFs = {
     return fs.access(sanitizedPath, mode)
   },
 
+  // READ ACCESS: Users can read directory contents from ANYWHERE
+  async readdir(dirPath, options) {
+    const sanitizedPath = sanitizeFilePath(dirPath)
+    return fs.readdir(sanitizedPath, options)
+  },
+
   // WRITE ACCESS: Restricted to user-approved directories only
   // Prevents path traversal attacks when writing files
   async writeFile(filePath, data, options) {
