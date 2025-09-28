@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
 const { pathToFileURL } = require('node:url')
 
+console.log('🔌 Preload: Script loaded, exposing electronAPI')
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld(
@@ -70,3 +72,5 @@ contextBridge.exposeInMainWorld(
     },
   })
 )
+
+console.log('✅ Preload: electronAPI exposed successfully')

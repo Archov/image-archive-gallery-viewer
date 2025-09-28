@@ -2,7 +2,14 @@
 
 A comprehensive desktop image gallery management system with rich metadata, tagging, and browser integration.
 
-## Current Status: PR-01 Complete ✅
+## Current Status: Core Gallery Complete ✅ + Architecture Refactored 🏗️
+
+### ✅ **Recent Major Refactoring (2025-09-28)**
+- **Broke down monolithic files**: `app.js` (1105 lines) → 6 focused modules (~150-300 lines each)
+- **Modularized main process**: `main.js` (1148 lines) → 5 specialized modules (~150-300 lines each)
+- **Fixed critical bugs**: Resolved circular dependencies and module loading issues
+- **Improved maintainability**: AI-friendly file sizes, clear separation of concerns
+- **Quality assurance**: 0 linting warnings, 0 security scan findings
 
 ### Fixed and Ready for Testing
 
@@ -65,16 +72,44 @@ A comprehensive desktop image gallery management system with rich metadata, tagg
 - **Keyboard event handling** for navigation
 - **Error boundaries** for corrupted file handling
 
+### 🏗️ **Modular Architecture**
+The codebase uses a carefully designed modular structure for maintainability:
+
+- **Separation of Concerns**: Each module has a single, well-defined responsibility
+- **AI-Friendly**: Files under 300 lines, easily managed by AI agents
+- **Testable**: Individual modules can be tested in isolation
+- **Collaborative**: Multiple developers can work on different modules simultaneously
+- **Extensible**: Easy to add new features without modifying existing code
+
 ### 📁 File Structure
 ```text
 src/
-├── main/
-│   ├── main.js          # Electron main process
-│   └── preload.js       # Secure API bridge
-└── renderer/
+├── main/                # Electron main process modules
+│   ├── main.js          # App initialization & lifecycle
+│   ├── preload.js       # Secure API bridge
+│   ├── menu-manager.js  # Application menu setup
+│   ├── settings-manager.js # Configuration & repository management
+│   ├── repository-manager.js # Repository migration & management
+│   ├── ipc-handlers.js  # IPC communication handlers
+│   ├── archive-service.js # Archive processing coordination
+│   ├── archive-extractors.js # ZIP/RAR/7Z extraction implementations
+│   ├── archive-database.js # Database operations & metadata
+│   ├── file-scanner.js  # Directory scanning utilities
+│   └── secure-fs.js     # Secure file system operations
+└── renderer/            # Electron renderer process modules
     ├── index.html       # App UI structure
-    ├── styles.css       # Gallery styling
-    └── app.js          # Gallery logic and interactions
+    ├── app.js          # Main entry point & module loader
+    ├── gallery-core.js # Main gallery state & coordination
+    ├── debug-logger.js # Logging system
+    ├── image-loader.js # File loading & processing
+    ├── fullscreen-viewer.js # Fullscreen display & navigation
+    ├── ui-controls.js  # Event handlers & UI controls
+    ├── archive-manager.js # Archive processing coordination
+    ├── base.css        # Reset, body, utilities
+    ├── gallery.css     # Gallery grid & image display
+    ├── fullscreen.css  # Fullscreen viewer styles
+    ├── loading.css     # Loading indicators & progress
+    └── archive-ui.css  # Archive management interface
 
 images/                  # Image storage directory
 temp/                    # Temporary files directory
