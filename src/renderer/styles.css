@@ -335,6 +335,11 @@ body {
   font-size: 16px;
 }
 
+#processed-archives-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 .processed-archive-item {
   display: flex;
   justify-content: space-between;
