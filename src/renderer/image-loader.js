@@ -1,6 +1,34 @@
 /**
  * Image Loader - Handles file selection, loading, and image processing
  */
+
+// Shared extension and MIME catalogs (single source of truth)
+const IMAGE_EXTENSIONS = [
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.tif',
+  '.tiff',
+  '.svg',
+  '.avif',
+]
+const ARCHIVE_EXTENSIONS = ['.zip', '.rar', '.7z']
+const MIME_BY_EXT = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  svg: 'image/svg+xml',
+  avif: 'image/avif',
+}
+
 class ImageLoader {
   constructor() {
     this.gallery = null
@@ -24,14 +52,13 @@ class ImageLoader {
     try {
       const filePaths = await window.electronAPI.selectFiles()
       if (filePaths && filePaths.length > 0) {
-        const toLower = (p) => p.toLowerCase()
-        const isImg = (p) =>
-          ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.svg', '.avif'].some(
-            (ext) => toLower(p).endsWith(ext)
-          )
-        const isArc = (p) => ['.zip', '.rar', '.7z'].some((ext) => toLower(p).endsWith(ext))
-        const imagePaths = filePaths.filter(isImg)
-        const archivePaths = filePaths.filter(isArc)
+        const toLower = (p) => (p || '').toLowerCase()
+        const imagePaths = filePaths.filter((p) =>
+          IMAGE_EXTENSIONS.some((ext) => toLower(p).endsWith(ext))
+        )
+        const archivePaths = filePaths.filter((p) =>
+          ARCHIVE_EXTENSIONS.some((ext) => toLower(p).endsWith(ext))
+        )
 
         if (archivePaths.length) {
           const archiveFiles = archivePaths.map((p) => ({ path: p, name: p.split(/[/\\]/).pop() }))
@@ -78,8 +105,14 @@ class ImageLoader {
     }
   }
 
-  async loadFilesFromPaths(filePaths) {
-    console.log('🔍 DEBUG: loadFilesFromPaths called with', filePaths.length, 'paths')
+  async loadFilesFromPaths(filePaths, options = {}) {
+    const { manageUi = true } = options
+    console.log(
+      '🔍 DEBUG: loadFilesFromPaths called with',
+      filePaths.length,
+      'paths, manageUi:',
+      manageUi
+    )
 
     console.log(`🚀 Starting to load ${filePaths.length} files from paths...`)
     console.log(
@@ -90,8 +123,10 @@ class ImageLoader {
     )
     const startTime = performance.now()
 
-    this.gallery.showLoading()
-    this.gallery.updateProgress(0, filePaths.length)
+    if (manageUi) {
+      this.gallery.showLoading()
+      this.gallery.updateProgress(0, filePaths.length)
+    }
     // Don't clear images array - append to existing images
     // this.images = [];
 
@@ -106,6 +141,7 @@ class ImageLoader {
               ? 64
               : 128
       let processedCount = 0
+      let totalSuccessCount = 0
 
       console.log(`🔍 DEBUG: Processing file paths in batches of ${batchSize}...`)
 
@@ -129,6 +165,7 @@ class ImageLoader {
               allResults.push(result)
               if (!result.error) {
                 batchSuccessfulCount++
+                totalSuccessCount++
               }
             }
             return
@@ -148,20 +185,20 @@ class ImageLoader {
         this.gallery.images.push(...allResults)
 
         processedCount += batch.length
-        this.gallery.updateProgress(processedCount, filePaths.length)
+        if (manageUi) {
+          this.gallery.updateProgress(processedCount, filePaths.length)
+        }
 
-        const successSoFar = this.gallery.images.filter((img) => !img.error).length
         console.log(
-          `🔍 DEBUG: Path batch complete. Total processed: ${processedCount}/${filePaths.length}, successful: ${successSoFar}, batch success: ${batchSuccessfulCount}/${batch.length}`
+          `🔍 DEBUG: Path batch complete. Total processed: ${processedCount}/${filePaths.length}, successful: ${totalSuccessCount}, batch success: ${batchSuccessfulCount}/${batch.length}`
         )
       }
 
-      const successCount = this.gallery.images.filter((img) => !img.error).length
-      const failedCount = this.gallery.images.length - successCount
+      const failedCount = this.gallery.images.length - totalSuccessCount
       const loadTime = performance.now() - startTime
 
       console.log(
-        `✅ Loaded ${successCount} images from paths successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`
+        `✅ Loaded ${totalSuccessCount} images from paths successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`
       )
       console.log(
         '🔍 DEBUG: Memory after loading:',
@@ -180,7 +217,9 @@ class ImageLoader {
       console.error('❌ Error loading files from paths:', error)
       alert(`Error loading images: ${error.message}`)
     } finally {
-      this.gallery.hideLoading()
+      if (manageUi) {
+        this.gallery.hideLoading()
+      }
     }
   }
 
@@ -211,6 +250,7 @@ class ImageLoader {
               ? 32
               : 64
       let processedCount = 0
+      let totalSuccessCount = 0
 
       console.log(`🔍 DEBUG: Processing image files in batches of ${batchSize}...`)
 
@@ -234,6 +274,7 @@ class ImageLoader {
               allResults.push(result)
               if (!result.error) {
                 batchSuccessfulCount++
+                totalSuccessCount++
               }
             }
             return
@@ -255,18 +296,16 @@ class ImageLoader {
         processedCount += batch.length
         this.gallery.updateProgress(processedCount, imageFiles.length)
 
-        const successSoFar = this.gallery.images.filter((img) => !img.error).length
         console.log(
-          `🔍 DEBUG: Image batch complete. Total processed: ${processedCount}/${imageFiles.length}, successful: ${successSoFar}, batch success: ${batchSuccessfulCount}/${batch.length}`
+          `🔍 DEBUG: Image batch complete. Total processed: ${processedCount}/${imageFiles.length}, successful: ${totalSuccessCount}, batch success: ${batchSuccessfulCount}/${batch.length}`
         )
       }
 
-      const successCount = this.gallery.images.filter((img) => !img.error).length
-      const failedCount = this.gallery.images.length - successCount
+      const failedCount = this.gallery.images.length - totalSuccessCount
       const loadTime = performance.now() - startTime
 
       console.log(
-        `✅ Loaded ${successCount} images successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`
+        `✅ Loaded ${totalSuccessCount} images successfully (${failedCount} failed) in ${loadTime.toFixed(2)}ms`
       )
       console.log(
         '🔍 DEBUG: Memory after loading:',
@@ -389,19 +428,7 @@ class ImageLoader {
       const buffer = await window.electronAPI.readFile(filePath)
       const uint8Array = new Uint8Array(buffer)
       const extension = filePath.split('.').pop().toLowerCase()
-      const mimeTypes = {
-        jpg: 'image/jpeg',
-        jpeg: 'image/jpeg',
-        png: 'image/png',
-        gif: 'image/gif',
-        webp: 'image/webp',
-        bmp: 'image/bmp',
-        tif: 'image/tiff',
-        tiff: 'image/tiff',
-        svg: 'image/svg+xml',
-        avif: 'image/avif',
-      }
-      const mimeType = mimeTypes[extension] || 'application/octet-stream'
+      const mimeType = MIME_BY_EXT[extension] || 'application/octet-stream'
       const blob = new Blob([uint8Array], { type: mimeType })
       const blobUrl = URL.createObjectURL(blob)
 
@@ -455,26 +482,13 @@ class ImageLoader {
   }
 
   isImageFile(file) {
-    const imageExtensions = [
-      '.jpg',
-      '.jpeg',
-      '.png',
-      '.gif',
-      '.webp',
-      '.bmp',
-      '.tif',
-      '.tiff',
-      '.svg',
-      '.avif',
-    ]
     const fileName = (file?.name || file?.path || '').toLowerCase()
-    return imageExtensions.some((ext) => fileName.endsWith(ext))
+    return IMAGE_EXTENSIONS.some((ext) => fileName.endsWith(ext))
   }
 
   isArchiveFile(file) {
-    const archiveExtensions = ['.zip', '.rar', '.7z']
     const fileName = (file?.name || file?.path || '').toLowerCase()
-    return archiveExtensions.some((ext) => fileName.endsWith(ext))
+    return ARCHIVE_EXTENSIONS.some((ext) => fileName.endsWith(ext))
   }
 }
 

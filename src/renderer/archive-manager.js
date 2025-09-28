@@ -60,28 +60,28 @@ class ArchiveManager {
             if (choice) {
               // User wants to reprocess
               this.gallery.loadingText.textContent = `Reprocessing ${archiveFile.name || 'archive'}...`
-              let unsubscribeProgressReprocess = () => {}
-              try {
-                unsubscribeProgressReprocess = window.electronAPI.onArchiveProgress(progressHandler)
-                const reprocessResult = await window.electronAPI.processArchive(
-                  archiveFile.path,
-                  true
-                )
+              // Avoid double subscription: replace the previous listener
+              unsubscribeProgress()
+              unsubscribeProgress = window.electronAPI.onArchiveProgress(progressHandler)
+              const reprocessResult = await window.electronAPI.processArchive(
+                archiveFile.path,
+                true
+              )
 
-                console.log(
-                  `✅ Archive reprocessed: ${reprocessResult.metadata.name} (${reprocessResult.extractedFiles.length} images extracted)`
-                )
+              console.log(
+                `✅ Archive reprocessed: ${reprocessResult.metadata.name} (${reprocessResult.extractedFiles.length} images extracted)`
+              )
 
-                // Load the newly extracted images
-                if (reprocessResult.extractedFiles.length > 0) {
-                  const extractedImagePaths = reprocessResult.extractedFiles.map(
-                    (f) => f.extractedPath
-                  )
-                  await this.gallery.imageLoader.loadFilesFromPaths(extractedImagePaths)
-                }
-              } finally {
-                unsubscribeProgressReprocess()
+              // Load the newly extracted images
+              if (reprocessResult.extractedFiles.length > 0) {
+                const extractedImagePaths = reprocessResult.extractedFiles.map(
+                  (f) => f.extractedPath
+                )
+                await this.gallery.imageLoader.loadFilesFromPaths(extractedImagePaths, {
+                  manageUi: false,
+                })
               }
+              // Outer finally will unsubscribe the active listener
             } else {
               // User chose to skip - show message about previously processed archive
               const prevCount = Array.isArray(result.extractedFiles)
@@ -100,7 +100,9 @@ class ArchiveManager {
             // Load the extracted images
             if (result.extractedFiles.length > 0) {
               const extractedImagePaths = result.extractedFiles.map((f) => f.extractedPath)
-              await this.gallery.imageLoader.loadFilesFromPaths(extractedImagePaths)
+              await this.gallery.imageLoader.loadFilesFromPaths(extractedImagePaths, {
+                manageUi: false,
+              })
             }
           }
         } finally {
@@ -138,7 +140,7 @@ class ArchiveManager {
       // Load the extracted images into the gallery
       if (result.extractedFiles.length > 0) {
         const extractedImagePaths = result.extractedFiles.map((f) => f.extractedPath)
-        await this.gallery.imageLoader.loadFilesFromPaths(extractedImagePaths)
+        await this.gallery.imageLoader.loadFilesFromPaths(extractedImagePaths, { manageUi: false })
       }
     } catch (error) {
       console.error(`❌ Failed to load processed archive:`, error)

@@ -3,7 +3,18 @@
  */
 class ArchiveExtractors {
   constructor() {
-    this.imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg']
+    this.imageExtensions = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.webp',
+      '.bmp',
+      '.tif',
+      '.tiff',
+      '.svg',
+      '.avif',
+    ]
   }
 
   /**
@@ -150,16 +161,17 @@ class ArchiveExtractors {
     const total = imageFiles.length
 
     // 2) Extract with image patterns to filter at extraction time
-    const imagePatterns = [
-      '*.jpg',
-      '*.jpeg',
-      '*.png',
-      '*.gif',
-      '*.webp',
-      '*.bmp',
-      '*.tiff',
-      '*.svg',
-    ]
+    // Generate case-insensitive patterns to handle upper-case extensions (JPG, PNG, etc.)
+    const imagePatterns = Array.from(
+      new Set(
+        this.imageExtensions.flatMap((ext) => {
+          const trimmed = ext.startsWith('.') ? ext.slice(1) : ext
+          const lower = `*.${trimmed.toLowerCase()}`
+          const upper = `*.${trimmed.toUpperCase()}`
+          return lower === upper ? [lower] : [lower, upper]
+        })
+      )
+    )
     return new Promise((resolve, reject) => {
       const stream = Seven.extractFull(archivePath, extractPath, {
         $progress: true,
