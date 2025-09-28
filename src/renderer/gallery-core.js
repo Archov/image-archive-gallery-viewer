@@ -28,7 +28,9 @@ class ImageGallery {
     }
 
     // Load processed archives on startup
-    this.loadProcessedArchivesList()
+    this.loadProcessedArchivesList().catch((error) => {
+      console.error('❌ Failed to load processed archives list', error)
+    })
 
     // Clean up resources on window unload
     window.addEventListener('beforeunload', () => {
