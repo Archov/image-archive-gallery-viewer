@@ -44,22 +44,26 @@ class ArchiveExtractors {
 
         // Track used filenames to prevent collisions
         const usedNames = new Set()
+        const usedNamesNormalized = new Set()
 
         for (const entry of imageEntries) {
           try {
             const baseName = path.basename(entry.entryName)
             let fileName = baseName
             let counter = 1
+            let normalized = fileName.toLowerCase()
 
             // Handle filename collisions by adding suffix
-            while (usedNames.has(fileName)) {
+            while (usedNames.has(fileName) || usedNamesNormalized.has(normalized)) {
               const ext = path.extname(baseName)
               const nameWithoutExt = path.basename(baseName, ext)
               fileName = `${nameWithoutExt}_${counter}${ext}`
               counter++
+              normalized = fileName.toLowerCase()
             }
 
             usedNames.add(fileName)
+            usedNamesNormalized.add(normalized)
             const finalPath = path.join(extractPath, fileName) // nosemgrep
             // Write the entry data directly to ensure unique filename is used
             const data = entry.getData()

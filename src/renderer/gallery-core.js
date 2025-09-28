@@ -30,6 +30,11 @@ class ImageGallery {
     // Load processed archives on startup
     this.loadProcessedArchivesList()
 
+    // Clean up resources on window unload
+    window.addEventListener('beforeunload', () => {
+      this.cleanup()
+    })
+
     // Override console methods to capture logs
     this.debugLogger.setupDebugCapture()
 
