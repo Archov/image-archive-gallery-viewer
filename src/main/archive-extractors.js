@@ -16,6 +16,7 @@ class ArchiveExtractors {
   async extractZip(archivePath, extractPath, progressCallback) {
     const AdmZip = require('adm-zip')
     const path = require('node:path')
+    const fs = require('node:fs')
 
     return new Promise((resolve, reject) => {
       try {
@@ -33,7 +34,7 @@ class ArchiveExtractors {
         // Track used filenames to prevent collisions
         const usedNames = new Set()
 
-        imageEntries.forEach((entry) => {
+        for (const entry of imageEntries) {
           try {
             const baseName = path.basename(entry.entryName)
             let fileName = baseName
@@ -49,8 +50,9 @@ class ArchiveExtractors {
 
             usedNames.add(fileName)
             const finalPath = path.join(extractPath, fileName) // nosemgrep
-            // Extract into extractPath with an explicit new name
-            zip.extractEntryTo(entry, extractPath, false, true, false, fileName)
+            // Write the entry data directly to ensure unique filename is used
+            const data = entry.getData()
+            fs.writeFileSync(finalPath, data)
 
             extractedFiles.push({
               originalName: entry.entryName,
@@ -65,7 +67,7 @@ class ArchiveExtractors {
           } catch (_error) {
             console.warn(`[ARCHIVE] Failed to extract entry:`, _error.message)
           }
-        })
+        }
 
         resolve(extractedFiles)
       } catch (error) {

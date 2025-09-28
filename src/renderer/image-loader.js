@@ -26,8 +26,8 @@ class ImageLoader {
       if (filePaths && filePaths.length > 0) {
         const toLower = (p) => p.toLowerCase()
         const isImg = (p) =>
-          ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg'].some((ext) =>
-            toLower(p).endsWith(ext)
+          ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.svg', '.avif'].some(
+            (ext) => toLower(p).endsWith(ext)
           )
         const isArc = (p) => ['.zip', '.rar', '.7z'].some((ext) => toLower(p).endsWith(ext))
         const imagePaths = filePaths.filter(isImg)
@@ -396,6 +396,7 @@ class ImageLoader {
         gif: 'image/gif',
         webp: 'image/webp',
         bmp: 'image/bmp',
+        tif: 'image/tiff',
         tiff: 'image/tiff',
         svg: 'image/svg+xml',
         avif: 'image/avif',
@@ -461,6 +462,7 @@ class ImageLoader {
       '.gif',
       '.webp',
       '.bmp',
+      '.tif',
       '.tiff',
       '.svg',
       '.avif',

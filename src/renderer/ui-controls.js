@@ -4,6 +4,7 @@
 class UIControls {
   constructor() {
     this.gallery = null
+    this._bound = false
   }
 
   setGallery(gallery) {
@@ -11,6 +12,8 @@ class UIControls {
   }
 
   bindEvents() {
+    if (this._bound) return
+
     if (
       !this.gallery.fileSelectBtn ||
       !this.gallery.closeFullscreenBtn ||
@@ -21,6 +24,8 @@ class UIControls {
       console.warn('⚠️ Skipping event binding: required elements missing')
       return
     }
+
+    this._bound = true
 
     // File selection
     this.gallery.fileSelectBtn.addEventListener('click', () => this.gallery.selectFiles())
@@ -67,20 +72,21 @@ class UIControls {
     })
 
     galleryContainer.addEventListener('dragenter', (_e) => {
-      this.gallery.dropZone.classList.add('drag-over')
+      this.gallery.dropZone?.classList.add('drag-over')
     })
 
     galleryContainer.addEventListener('dragleave', (e) => {
       // Only remove class if we're actually leaving the drop zone
       if (!galleryContainer.contains(e.relatedTarget)) {
-        this.gallery.dropZone.classList.remove('drag-over')
+        this.gallery.dropZone?.classList.remove('drag-over')
       }
     })
 
     galleryContainer.addEventListener('drop', (e) => {
-      this.gallery.dropZone.classList.remove('drag-over')
-      const files = Array.from(e.dataTransfer.files)
-      this.gallery.loadFiles(files)
+      this.gallery.dropZone?.classList.remove('drag-over')
+      const fileList = e.dataTransfer?.files
+      const files = fileList ? Array.from(fileList) : []
+      if (files.length) this.gallery.loadFiles(files)
     })
 
     // No hover effects to optimize
@@ -91,7 +97,7 @@ class UIControls {
     if (e.ctrlKey && e.key === 'd') {
       e.preventDefault()
       console.log('🔍 DEBUG: Ctrl+D detected, syncing logs to main process...')
-      this.gallery.syncLogsToMain()
+      this.gallery.syncLogsToMain?.()
       return
     }
 
@@ -124,26 +130,31 @@ class UIControls {
   }
 
   updateProgress(current, total) {
-    if (!this.gallery.loadingProgress || !this.gallery.progressFill || !this.gallery.progressText) {
+    if (
+      !this.gallery.loadingProgress ||
+      !this.gallery.progressFill ||
+      !this.gallery.progressText ||
+      !this.gallery.loadingText
+    ) {
       console.warn('⚠️ Loading UI elements not found - progress cannot be displayed')
       return
     }
 
     this.gallery.loadingProgress.classList.remove('hidden')
-    const percentage = total > 0 ? (current / total) * 100 : 0
-    this.gallery.progressFill.style.width = `${percentage}%`
+    const percentage = total > 0 ? Math.min(100, Math.max(0, (current / total) * 100)) : 0
+    this.gallery.progressFill.style.width = `${percentage.toFixed(1)}%`
     this.gallery.progressText.textContent = `${current} / ${total}`
     this.gallery.loadingText.textContent = `Loading images... (${current}/${total})`
   }
 
   hideDropZone() {
-    this.gallery.dropZone.classList.add('hidden')
-    this.gallery.galleryGrid.classList.remove('hidden')
+    this.gallery.dropZone?.classList.add('hidden')
+    this.gallery.galleryGrid?.classList.remove('hidden')
   }
 
   showDropZone() {
-    this.gallery.dropZone.classList.remove('hidden')
-    this.gallery.galleryGrid.classList.add('hidden')
+    this.gallery.dropZone?.classList.remove('hidden')
+    this.gallery.galleryGrid?.classList.add('hidden')
   }
 }
 

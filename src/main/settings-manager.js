@@ -60,20 +60,28 @@ class SettingsManager {
 
       // Check if any archives are still in temp directories (need migration)
       const tempDir = path.join(require('electron').app.getPath('temp'), 'gallery-extraction')
-      const hasTempArchives = existingArchives.some((archive) => {
+      const tempArchives = existingArchives.filter((archive) => {
         if (!archive.extractDir) return false
         try {
           const rel = path.relative(tempDir, archive.extractDir)
-          return !rel.startsWith('..') && rel !== ''
+          return rel && !rel.startsWith('..')
         } catch {
           return false
         }
       })
+      const hasTempArchives = tempArchives.length > 0
 
       const needsMigration =
         (oldRepositoryPath &&
-          oldRepositoryPath !== selectedPath &&
-          !selectedPath.startsWith(oldRepositoryPath + path.sep)) ||
+          path.resolve(oldRepositoryPath) !== path.resolve(selectedPath) &&
+          (() => {
+            try {
+              const rel = path.relative(path.resolve(oldRepositoryPath), path.resolve(selectedPath))
+              return !(rel && !rel.startsWith('..'))
+            } catch {
+              return true
+            }
+          })()) ||
         hasTempArchives
 
       let shouldMigrate = false
@@ -85,7 +93,7 @@ class SettingsManager {
           title: 'Migrate Existing Content?',
           message: 'Repository Location Changed',
           detail: hasTempArchives
-            ? `You have ${existingArchives.length} processed archive(s) stored in temporary directories.\n\nWould you like to copy all existing images and archives to the new repository location?`
+            ? `You have ${tempArchives.length} processed archive(s) stored in temporary directories.\n\nWould you like to copy all existing images and archives to the new repository location?`
             : `You have an existing repository at:\n${oldRepositoryPath}\n\nWould you like to copy all existing images and archives to the new location?`,
           buttons: ['Migrate Content', 'Start Fresh', 'Cancel'],
           defaultId: 0,
@@ -111,12 +119,25 @@ class SettingsManager {
 
           // Perform migration
           const repositoryManager = require('./repository-manager')
-          const migrationSource = hasTempArchives ? null : oldRepositoryPath
-          const migrationSuccess = await repositoryManager.migrateRepositoryContent(
-            migrationSource,
-            selectedPath,
-            existingArchives
-          )
+          let migrationSuccess = true
+          // 1) Migrate old repository structure (if applicable)
+          if (oldRepositoryPath && path.resolve(oldRepositoryPath) !== path.resolve(selectedPath)) {
+            const ok = await repositoryManager.migrateRepositoryContent(
+              oldRepositoryPath,
+              selectedPath,
+              null
+            )
+            migrationSuccess = migrationSuccess && ok
+          }
+          // 2) Migrate temp archives (if any)
+          if (hasTempArchives) {
+            const ok = await repositoryManager.migrateRepositoryContent(
+              null,
+              selectedPath,
+              tempArchives
+            )
+            migrationSuccess = migrationSuccess && ok
+          }
           if (!migrationSuccess) {
             // Migration failed, ask user what to do
             const failureResult = await dialog.showMessageBox(mainWindow, {

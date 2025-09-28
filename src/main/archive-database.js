@@ -108,11 +108,12 @@ class ArchiveDatabase {
   /**
    * Get archive metadata
    * @param {string} filePath - Archive file path
+   * @param {string} precomputedHash - Optional precomputed hash to avoid double calculation
    * @returns {Promise<Object>} Archive metadata
    */
-  async getArchiveMetadata(filePath) {
+  async getArchiveMetadata(filePath, precomputedHash) {
     const stats = await secureFs.stat(filePath)
-    const hash = await this.calculateFileHash(filePath)
+    const hash = precomputedHash ?? (await this.calculateFileHash(filePath))
 
     return {
       hash,

@@ -29,8 +29,10 @@ class IPCHandlers {
               'gif',
               'webp',
               'bmp',
+              'tif',
               'tiff',
               'svg',
+              'avif',
               'zip',
               'rar',
               '7z',
@@ -38,7 +40,7 @@ class IPCHandlers {
           },
           {
             name: 'Images',
-            extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'svg'],
+            extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'svg', 'avif'],
           },
           {
             name: 'Archives',

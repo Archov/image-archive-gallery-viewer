@@ -67,8 +67,9 @@ class RepositoryManager {
           if (archive.extractDir) {
             try {
               // Create archive-specific subdirectory in new repository
-              const archiveName = archive.name.replace(/[^a-zA-Z0-9\-_]/g, '_')
-              const newArchiveDir = path.join(newPath, archiveName)
+              const baseName = (archive.name || 'archive').replace(/[^a-zA-Z0-9\-_]/g, '_')
+              const unique = archive.hash ? `-${archive.hash.slice(0, 8)}` : ''
+              const newArchiveDir = path.join(newPath, `${baseName}${unique}`)
 
               // Copy the entire extract directory
               await this.copyDirectoryRecursive(archive.extractDir, newArchiveDir)
@@ -140,8 +141,8 @@ class RepositoryManager {
           if (archive.extractDir) {
             try {
               const rel = path.relative(oldPath, archive.extractDir)
-              if (!rel.startsWith('..') && rel !== '') {
-                const newExtractDir = archive.extractDir.replace(oldPath, newPath)
+              if (!rel.startsWith('..')) {
+                const newExtractDir = path.join(newPath, rel) // rel may be '' => newPath
                 if (newExtractDir !== archive.extractDir) {
                   updatedArchive.extractDir = newExtractDir
                   needsUpdate = true
@@ -158,8 +159,8 @@ class RepositoryManager {
               if (file.extractedPath) {
                 try {
                   const rel = path.relative(oldPath, file.extractedPath)
-                  if (!rel.startsWith('..') && rel !== '') {
-                    const newPathExtracted = file.extractedPath.replace(oldPath, newPath)
+                  if (!rel.startsWith('..')) {
+                    const newPathExtracted = path.join(newPath, rel)
                     if (newPathExtracted !== file.extractedPath) {
                       return {
                         ...file,
@@ -207,13 +208,20 @@ class RepositoryManager {
                 ? path.dirname(db.archives[hash].extractedFiles[0].extractedPath)
                 : null
               if (oldExtractDir) {
-                db.archives[hash].extractedFiles = db.archives[hash].extractedFiles.map((file) => ({
-                  ...file,
-                  extractedPath: file.extractedPath.replace(
-                    oldExtractDir,
-                    migratedArchive.extractDir
-                  ),
-                }))
+                db.archives[hash].extractedFiles = db.archives[hash].extractedFiles.map((file) => {
+                  try {
+                    const rel = path.relative(oldExtractDir, file.extractedPath)
+                    if (!rel.startsWith('..')) {
+                      return {
+                        ...file,
+                        extractedPath: path.join(migratedArchive.extractDir, rel),
+                      }
+                    }
+                  } catch (_error) {
+                    // Path comparison failed, keep original
+                  }
+                  return file
+                })
               }
             }
 

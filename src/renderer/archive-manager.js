@@ -29,6 +29,7 @@ class ArchiveManager {
 
     // Clear existing gallery when processing new archives
     this.gallery.images = []
+    this.gallery.renderGallery()
     this.gallery.imageLoader.cleanupBlobUrls()
 
     for (const archiveFile of archiveFiles) {
@@ -120,6 +121,7 @@ class ArchiveManager {
 
       // Clear existing gallery when loading a processed archive
       this.gallery.images = []
+      this.gallery.renderGallery()
       this.gallery.imageLoader.cleanupBlobUrls()
 
       // Show loading

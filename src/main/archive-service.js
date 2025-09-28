@@ -86,8 +86,8 @@ class ArchiveService {
       }
     }
 
-    // Get archive metadata
-    const metadata = await archiveDatabase.getArchiveMetadata(archivePath)
+    // Get archive metadata (use precomputed hash if available to avoid double hashing)
+    const metadata = await archiveDatabase.getArchiveMetadata(archivePath, hash)
     console.log(
       `[ARCHIVE] Archive type: ${metadata.type}, size: ${(metadata.size / 1024 / 1024).toFixed(2)}MB`
     )
